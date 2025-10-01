@@ -23,3 +23,5 @@ Deliverables:
     - [ ] Sliders / Faders ?
     - [ ] Debug ports, test pads / pins
     - [ ] The two arms connection
+
+- [ ] Do Academ Malprac Aware.

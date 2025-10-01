@@ -13,3 +13,13 @@ By default, these servos do not feature position feedback, nor current controlle
 ![alt text](imgs/controllersketch.png)
 
 The operator should be able to set a state in the hexapod control code that allows for the joint angles of the arms on the controller to be streamed to the robot.
+
+Each presentation 5 mins:
+
+- What I plan to do
+- What I did do
+- What I will do
+
+- Create a family of use cases
+- Human robot interaction
+  - Dextrous robots
