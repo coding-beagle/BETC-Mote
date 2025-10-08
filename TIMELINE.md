@@ -7,6 +7,7 @@ Week | W/C         | Key Events                                                 
 1    | 29 Sep 2025 | Project Meeting & Lecture 1: General Intro                                                                     |
 2    | 06 Oct 2025 | Project Meeting & Lecture 2: Intro to LaTex and Mathematical Writing, Intro to CPD and project/time management |
 3    | 13 Oct 2025 | Project Meeting                                                                                                | Submit Preliminary Project Proposal and H&S Risk Assessment on CANVAS by 2pm on **17th Oct 2025**
+**ALSO ATTEND FRIDAY 17TH HS INDUCTION**
 4    | 20 Oct 2025 | Project meeting with review and approval of prelim. proposal, review and approve of H&S risk assessment        |
 5    | 27 Oct 2025 | Progress Review Meeting 1, Individual performance and technical progress                                       |
 6    | 3 Nov 2025  | Project Meeting                                                                                                |
