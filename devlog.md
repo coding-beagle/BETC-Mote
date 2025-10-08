@@ -23,3 +23,10 @@
   - Single vs dual arm - most hospital applications require dual arm control whereas most conventional interfaces only focus on single arm pose mapping.
   - Network communication - latency is a key driver in design decisions for teleoperation.
   - ![alt text](imgs/sensorarrangement.png)
+
+08/10/25
+
+- Read [An Effective Obstacle Avoidance and Motion Planning Design for Underwater Telescopic Arm Robots Based on a Tent Chaotic Dung Beetle Algorithm](https://www.librarysearch.manchester.ac.uk/discovery/fulldisplay?docid=cdi_proquest_journals_2876395724&context=PC&vid=44MAN_INST:MU_NUI&lang=en&search_scope=MyInst_and_CI&adaptor=Primo%20Central&tab=Everything&query=any,contains,robot%20arm%20obstacle%20avoidance&sortby=rank&mode=basic&offset=10&pcAvailability=false)
+  - Key limitation: they mention sample capture, but limit it only to predetermined starting and ending positions, and that the environment around it is static.
+  - This reveals a gap for where human teleoperation could be beneficial - in the real world where visual feedback + trained operators could use a set up like in Lyu et al with the dual arm IMU sensor to control the arm.
+
