@@ -10,6 +10,7 @@ Deliverables / Proposed project scope:
     - A single microcontroller / imu combo that is capable of measuring rotation.
       - Potential options for this include the Seeed Xiao NRF52840 sense, which has LiPo battery charging and a microcontroller w/ BLE built in
     - This will be used to test strategies for sensor data fusion + combatting sensor drift.
+    - Also be used to test feasible data acquisition + transmission rates, i.e. whether BLE will be sufficient or a wired connection will be fine.
   - [ ] Milestone 2: Prototype of whole arm
     - 4 x of a working node design to test the data pipeline of four sensors simultaneously.
     - This can be achieved before / during winter break.

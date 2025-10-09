@@ -1,0 +1,11 @@
+- Humanoid -esque joint configurations
+- Figure out what the best solution is / evaluation via comparison table
+  - Joint tracking with computer vision
+    - Justify why or why not?
+  - Exoskeleton
+  - Joystick
+  - Strain gauge sensors
+- Pugh matrix for design
+- Coppelia-sim
+- Proposal document should only be high level
+- Draw conclusion
