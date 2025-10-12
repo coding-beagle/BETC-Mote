@@ -16,19 +16,11 @@ The deliverables for this project are as follows:
 
 - The creation of a device or software that reads an operator's joint angles.
 - Applying the values read in from this software to a simulation environment (CoppeliaSim or ROS Gazebo), where a laterally mounted 7 DoF robot arm is controlled from the operator.
-- Creating an obstacle-rich simulation, where an operator is tasked with moving between points to quantify the differences in success criteria over conventional control methods (e.g. a joystick or traditional end effector mapping).s
+- Creating an obstacle-rich simulation, where an operator is tasked with moving between points to quantify the differences in success criteria over conventional control methods (e.g. a joystick or traditional end effector mapping).
   - Quantifiable improvements could include action time, number of obstacles contacted, path tracing accuracy (if told to trace a sample path).
 - Creation of a final report that outlines a table of contents, introduction, methodology, results and conclusion.
   - Any code produced should be in an appendix in this report.
 
 ## Timeline
 
-![alt text](proposal_imgs/mermaid-diagram.svg)
-
-```mermaid
-gantt
-    title Project Plan Semester 2
-    Writing of report conclusions  :crit, 2026-02-02, 21d
-    Report review period :crit, 2026-02-23, 5d
-
-```
+![alt text](proposal_imgs/semester1plan.svg)
