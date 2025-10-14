@@ -1,5 +1,5 @@
 import cv2 as cv
-from matplotlib import pyplot
+import matplotlib.pyplot as plt
 import numpy as np
 import math
 
@@ -91,20 +91,56 @@ def calc_distance_between_circles(circle_1, circle_2):
     )
 
 
+def add_text_to_frame(text, frame, position):
+    cv.putText(
+        frame,
+        text,
+        position,
+        cv.FONT_HERSHEY_COMPLEX,
+        1,
+        (255, 255, 255),
+        1,
+        2,
+    )
+    return frame
+
+
+RADIUS_150 = 100
+RADIUS_300 = 20
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection="3d")
+ax.autoscale(False)
+
+ax.set_xlim(0, 640)  # x-axis from 0 to 640
+ax.set_ylim(0, 480)  # y-axis from 0 to 480
+ax.set_zlim(0, 100)  # z-axis (radius) from 0 to 100
+
+plt.ion()  # Interactive mode on
+plt.show(block=False)  # Show window without blocking
+fig.canvas.draw()
+
+ball_positions = []  # Store positions for plotting
+
+frame_count = 0
+max_points = 1  # Keep only last 100 points for cleaner visualization
+
 while True:
     ret, frame = cam.read()
 
     # Display the captured frame
-    cv.imshow("Camera", frame)
+    # cv.imshow("Camera", frame)
 
     gray, frame, circles = highlight_yellow_ball(frame)
-    cv.imshow("gray", gray)
+    # cv.imshow("gray", gray)
 
     if len(circles) > 0:
         x, y, r = circles[0]
         cv.circle(frame, (x, y), r, (0, 255, 0), 2)  # Circle outline
         cv.circle(frame, (x, y), 2, (0, 0, 255), 3)  # Center point
         last_circle = [x, y, r]
+        ball_positions.append([x, y, r])
+        # add_text_to_frame(f"Radius: {r}", frame, (0, 50))
     elif len(last_circle) > 0:
         cv.circle(
             frame, (last_circle[0], last_circle[1]), last_circle[2], (0, 0, 255), 2
@@ -113,7 +149,34 @@ while True:
             frame, (last_circle[0], last_circle[1]), 2, (0, 0, 255), 3
         )  # Center point
 
+        # add_text_to_frame(f"Radius: {last_circle[2]}", frame, (0, 50))
+
+    # Update plot every 5 frames to reduce overhead
+    if frame_count % 5 == 0 and len(ball_positions) > 0:
+        ax.clear()
+        positions = np.array(ball_positions[-max_points:])
+        ax.scatter(
+            positions[:, 0],
+            positions[:, 1],
+            positions[:, 2],
+            c=range(len(positions)),
+            cmap="viridis",
+        )
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.set_title("Ball Position Trajectory")
+        ax.autoscale(False)
+
+        ax.set_xlim(0, 640)
+        ax.set_ylim(0, 480)
+        ax.set_zlim(0, 100)
+        plt.draw()
+        plt.pause(0.1)  # Add a short pause to improve animation smoothness
+
     cv.imshow("YellowBall", frame)
+
+    frame_count += 1
 
     # Press 'q' to exit the loop
     if cv.waitKey(1) == ord("q"):
@@ -123,3 +186,4 @@ while True:
 cam.release()
 out.release()
 cv.destroyAllWindows()
+plt.close()
