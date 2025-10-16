@@ -1,2 +1,15 @@
 *.ds_store
 *.venv
+
+*.xmpi
+*.bbl
+*.gz
+*.xmpdata
+*.blg
+*.fdb_latexmk
+*.fls
+*.xml
+*.log
+*.aux
+*.toc
+*.bcf
