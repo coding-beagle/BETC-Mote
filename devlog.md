@@ -31,3 +31,29 @@
   - Key limitation: they mention marine sample capture, but limit it only to predetermined starting and ending positions, and that the environment around it is static.
   - This reveals a gap for where human teleoperation could be beneficial - in the real world where visual feedback + trained operators could use a set up like in Lyu et al with the dual arm IMU sensor to control the arm.
 
+10/10/25
+
+- Started work on proposal document
+
+13/10/25
+
+- Pugh Matrix (Bigger number = better):
+
+|Tracking Method|Complexity (1-5)|Cost (1-5)|Accuracy (1-5)|Latency (1-5)| Comments | Examples / sources | Total |
+|--|--|--|--|--|--|--|--|
+|IMU fusion|2|3|3|5|Sensor drift mitigation and data fusion will add complexity, and possibly latency.| [Honghao et al](https://link-springer-com.manchester.idm.oclc.org/book/10.1007/978-981-96-6545-7), [Zhou et al](https://link-springer-com.manchester.idm.oclc.org/book/10.1007/978-981-96-6139-8), [Masters et al](https://pmc.ncbi.nlm.nih.gov/articles/PMC8142556/pdf/nihms-1702711.pdf)|13/20|
+|Strain Gauge|3|2|2|4|Strain gauges are cheap, but will need one for every degree of freedom. Complexity could arise from tracking shoulder rotation.| [Araromi et al](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_proquest_miscellaneous_2460081548) |11/20|
+|Pose estimation (Computer Vision)|3|5|3|3|Open source implementations already available for preliminary analysis. Little to no cost, and development can be done 24/7 as no access to hardware is required.| [Brauer](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/bofker/alma992991560133101631)|14/20|
+|Marker/Fiducial tracking (Computer Vision)|3|4|4|3|Very similar advantages to pose estimation, although this introduces the additional aspects of having to source markers.|[Kado et al](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_crossref_primary_10_3130_aijt_27_1092), [Timmi et al](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_webofscience_primary_000453645400010CitationCount) |14/20|
+|Exoskeleton tracker|1|2|4|4|Would have to source or build a tracking rig, which would add too much to project scope. Latency and accuracy advantages are outweighed by complexity to develop and hardware costs.| [Zimmerman et al](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_webofscience_primary_000724145801125CitationCount) | 11/20|
+|Flex sensors|3|4|2|4|Similar to strain gauges, but these can be sewn into garments without the need to build additional hardware.| [Rashid](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_proquest_journals_2760225437) |13/20|
+
+
+14/10/25
+
+- Created basic computer vision tracking script for fun
+
+16/10/25
+
+- Finished proposal document and planning
+- Finished project risks
