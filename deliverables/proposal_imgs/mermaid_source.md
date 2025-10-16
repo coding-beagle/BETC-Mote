@@ -18,8 +18,13 @@ gantt
 
 ```mermaid
 gantt
-    title Project Plan Semester 2
-    Writing of report conclusions  :crit, 2026-02-02, 21d
-    Report review period :crit, 2026-02-23, 5d
+    section Deadlines
+      
+    section Report Writing
+      title Project Plan Semester 2
+      Writing of report results  :crit, 2026-02-02, 21d
+      Report review period :crit, 2026-02-23, 5d
+    
+    section Development
 
 ```
