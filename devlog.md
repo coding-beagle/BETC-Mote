@@ -46,7 +46,7 @@
 |Pose estimation (Computer Vision)|3|5|3|3|Open source implementations already available for preliminary analysis. Little to no cost, and development can be done 24/7 as no access to hardware is required.| [Brauer](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/bofker/alma992991560133101631)|14/20|
 |Marker/Fiducial tracking (Computer Vision)|3|4|4|3|Very similar advantages to pose estimation, although this introduces the additional aspects of having to source markers.|[Kado et al](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_crossref_primary_10_3130_aijt_27_1092), [Timmi et al](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_webofscience_primary_000453645400010CitationCount) |14/20|
 |Exoskeleton tracker|1|2|4|4|Would have to source or build a tracking rig, which would add too much to project scope. Latency and accuracy advantages are outweighed by complexity to develop and hardware costs.| [Zimmerman et al](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_webofscience_primary_000724145801125CitationCount) | 11/20|
-|Flex sensors|3|4|2|4|Similar to strain gauges, but these can be sewn into garments without the need to build additional hardware.| [Rashid](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_proquest_journals_2760225437) |13/20|
+|Flex sensors|3|4|2|4|Similar to strain gauges, but these can be sewn into garments without the need to build additional hardware. | [Rashid](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_proquest_journals_2760225437) |13/20|
 
 
 14/10/25
