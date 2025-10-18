@@ -145,8 +145,8 @@
 \def\submitdate#1{\gdef\@submitdate{#1}}
 \newcommand{\titletext}[1]
 {
-  \ifthenelse{\equal{#1}{msc}}{A dissertation submitted to The University of Manchester for the degree of\ \linebreak \textbf{Master of Science in \@course}\ \linebreak in the Faculty of \@faculty}{}
-  \ifthenelse{\equal{#1}{beng}}{A dissertation submitted to The University of Manchester for the degree of\ \linebreak \textbf{Bachelor of Engineering in \@course}\ \linebreak in the Faculty of \@faculty}{}
+  \ifthenelse{\equal{#1}{beng}}{A dissertation submitted to The University of Manchester for the degree of\ \linebreak \textbf{Master of Science in \@course}\ \linebreak in the Faculty of \@faculty}{}
+  \ifthenelse{\equal{#1}{msc}}{A dissertation submitted to The University of Manchester for the degree of\ \linebreak \textbf{Bachelor of Engineering in \@course}\ \linebreak in the Faculty of \@faculty}{}
 }
 \newcommand{\submissiontext}{\textbf{Year of submission}\ \linebreak \@submitdate}
 \newcommand{\authortext}{\textbf{Student ID}\ \linebreak \@studentid}

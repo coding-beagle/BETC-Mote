@@ -14,13 +14,16 @@ One such scenario that is researched is given in the paper by Jin et al, describ
 
 The deliverables for this project are as follows:
 
-- The creation of a device or software that reads an operator's joint angles.
-- Applying the values read in from this software to a simulation environment (CoppeliaSim or ROS Gazebo), where a laterally mounted 7 DoF robot arm is controlled from the operator.
+- The creation of a device or software that is capable of reading the angles in an operator's arm, in real time.
+  - Part of the project scope will be the rigorous examination of existing methods, and justifying the chosen method.
+- Applying the values read in from this software to a simulation environment, where a laterally mounted 7 DoF robot arm is controlled from the operator's arm movements.
 - Creating an obstacle-rich simulation, where an operator is tasked with moving between points to quantify the differences in success criteria over conventional control methods (e.g. a joystick or traditional end effector mapping).
-  - Quantifiable improvements could include action time, number of obstacles contacted, path tracing accuracy (if told to trace a sample path).
 - Creation of a final report that outlines a table of contents, introduction, methodology, results and conclusion.
-  - Any code produced should be in an appendix in this report.
+
+## Risk Mitigation
+
+The biggest risk on this project is scope creep, and the potential for the project to be more complicated than first imagined. This is why the plan is structured with lots of contingency built in, and structured incrementally. Each deliverable is a significant milestone which lays the foundation for the next, meaning that at every stage there should be sufficient work completed to create a meaningful report.
 
 ## Timeline
 
-![alt text](proposal_imgs/semester1plan.svg)
+![plan](proposal_imgs/plan.png)
