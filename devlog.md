@@ -48,6 +48,8 @@
 |Exoskeleton tracker|1|2|4|4|Would have to source or build a tracking rig, which would add too much to project scope. Latency and accuracy advantages are outweighed by complexity to develop and hardware costs.| [Zimmerman et al](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_webofscience_primary_000724145801125CitationCount) | 11/20|
 |Flex sensors|3|4|2|4|Similar to strain gauges, but these can be sewn into garments without the need to build additional hardware. | [Rashid](https://www.librarysearch.manchester.ac.uk/permalink/44MAN_INST/1rfd42k/cdi_proquest_journals_2760225437) |13/20|
 
+- Add columns for DoF
+- better explanation of columnstitles
 
 14/10/25
 
