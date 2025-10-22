@@ -1,6 +1,8 @@
 *.ds_store
 *.venv
 
+.venv/
+
 *.xmpi
 *.bbl
 *.gz
