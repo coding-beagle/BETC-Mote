@@ -106,6 +106,92 @@ def calculate_angle_3d(a, b, c):
     return np.degrees(angle)
 
 
+def calculate_body_reference_frame(landmarks):
+    """
+    Calculate body reference frame using hips and shoulders
+    Returns: origin, forward_vector, up_vector, right_vector
+    """
+    # Get key body landmarks
+    left_hip = landmarks[mp_holistic.PoseLandmark.LEFT_HIP]
+    right_hip = landmarks[mp_holistic.PoseLandmark.RIGHT_HIP]
+    left_shoulder = landmarks[mp_holistic.PoseLandmark.LEFT_SHOULDER]
+    right_shoulder = landmarks[mp_holistic.PoseLandmark.RIGHT_SHOULDER]
+
+    # Hip center as origin
+    hip_center = np.array(
+        [
+            (left_hip.x + right_hip.x) / 2,
+            (left_hip.y + right_hip.y) / 2,
+            (left_hip.z + right_hip.z) / 2,
+        ]
+    )
+
+    # Shoulder center
+    shoulder_center = np.array(
+        [
+            (left_shoulder.x + right_shoulder.x) / 2,
+            (left_shoulder.y + right_shoulder.y) / 2,
+            (left_shoulder.z + right_shoulder.z) / 2,
+        ]
+    )
+
+    # Up vector: from hip center to shoulder center
+    up_vector = shoulder_center - hip_center
+    up_vector = up_vector / np.linalg.norm(up_vector)
+
+    # Right vector: from left hip to right hip
+    right_hip_pos = np.array([right_hip.x, right_hip.y, right_hip.z])
+    left_hip_pos = np.array([left_hip.x, left_hip.y, left_hip.z])
+    right_vector = right_hip_pos - left_hip_pos
+    right_vector = right_vector / np.linalg.norm(right_vector)
+
+    # Forward vector: cross product of right and up
+    forward_vector = np.cross(right_vector, up_vector)
+    forward_vector = forward_vector / np.linalg.norm(forward_vector)
+
+    # Re-orthogonalize right vector
+    right_vector = np.cross(up_vector, forward_vector)
+    right_vector = right_vector / np.linalg.norm(right_vector)
+
+    return hip_center, forward_vector, up_vector, right_vector
+
+
+def calculate_limb_orientation_relative_to_body(
+    proximal, distal, forward_vector, up_vector, right_vector
+):
+    """
+    Calculate limb orientation relative to body reference frame
+    """
+    # Limb direction vector
+    limb_vector = np.array(
+        [distal.x - proximal.x, distal.y - proximal.y, distal.z - proximal.z]
+    )
+    limb_vector = limb_vector / np.linalg.norm(limb_vector)
+
+    # Project limb onto body planes
+    # Sagittal plane (forward-up): flexion/extension
+    forward_component = np.dot(limb_vector, forward_vector)
+    up_component = np.dot(limb_vector, up_vector)
+    sagittal_angle = np.degrees(
+        np.arctan2(forward_component, -up_component)
+    )  # Flexion angle
+
+    # Frontal plane (right-up): abduction/adduction
+    right_component = np.dot(limb_vector, right_vector)
+    frontal_angle = np.degrees(
+        np.arctan2(right_component, -up_component)
+    )  # Abduction angle
+
+    # Transverse plane (forward-right): rotation
+    transverse_angle = np.degrees(np.arctan2(right_component, forward_component))
+
+    return {
+        "flexion_extension": sagittal_angle,
+        "abduction_adduction": frontal_angle,
+        "rotation": transverse_angle,
+    }
+
+
 cap = cv2.VideoCapture(0 + cv2.CAP_DSHOW)
 with mp_holistic.Holistic(
     min_detection_confidence=0.5, min_tracking_confidence=0.5
@@ -125,57 +211,84 @@ with mp_holistic.Holistic(
         # Extract positions and angles
         if results.pose_landmarks:
             landmarks = results.pose_world_landmarks.landmark
-
             landmarks_2d = results.pose_landmarks.landmark
+
+            # Calculate body reference frame
+            hip_center, forward_vec, up_vec, right_vec = calculate_body_reference_frame(
+                landmarks
+            )
 
             # Get specific joint positions
             left_shoulder = landmarks[mp_holistic.PoseLandmark.LEFT_SHOULDER]
             left_elbow = landmarks[mp_holistic.PoseLandmark.LEFT_ELBOW]
             left_wrist = landmarks[mp_holistic.PoseLandmark.LEFT_WRIST]
             left_hip = landmarks[mp_holistic.PoseLandmark.LEFT_HIP]
-            left_knee = landmarks[mp_holistic.PoseLandmark.LEFT_KNEE]
-            left_ankle = landmarks[mp_holistic.PoseLandmark.LEFT_ANKLE]
 
             left_elbow_2d = landmarks_2d[mp_holistic.PoseLandmark.LEFT_ELBOW]
             left_shoulder_2d = landmarks_2d[mp_holistic.PoseLandmark.LEFT_SHOULDER]
 
-            # Calculate angles
+            # Calculate simple 3D angles
             left_elbow_angle = calculate_angle_3d(left_shoulder, left_elbow, left_wrist)
-            left_shoulder_angle = calculate_angle_3d(
-                left_hip, left_shoulder, left_elbow
+
+            # Calculate upper arm orientation relative to body
+            upper_arm_orientation = calculate_limb_orientation_relative_to_body(
+                left_shoulder, left_elbow, forward_vec, up_vec, right_vec
             )
-            # left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
+
+            # Calculate forearm orientation relative to body
+            forearm_orientation = calculate_limb_orientation_relative_to_body(
+                left_elbow, left_wrist, forward_vec, up_vec, right_vec
+            )
 
             # Print results
-            print(f"Left Elbow Angle: {left_elbow_angle:.2f}°")
-            # print(f"Left Shoulder Angle: {left_shoulder_angle:.2f}°")
-            # print(f"Left Knee Angle: {left_knee_angle:.2f}°")
+            # print(f"Left Elbow Flexion: {left_elbow_angle:.2f}°")
+            # print(
+            #     f"Upper Arm - Flex/Ext: {upper_arm_orientation['flexion_extension']:.1f}°, "
+            #     f"Abd/Add: {upper_arm_orientation['abduction_adduction']:.1f}°, "
+            #     f"Rotation: {upper_arm_orientation['rotation']:.1f}°"
+            # )
 
-            # Display angles on image
+            # Display on image
             h, w, _ = image.shape
-            if left_elbow_angle:
-                # print(left_elbow_angle)
-                cv2.putText(
-                    image,
-                    f"Elbow: {left_elbow_angle:.1f}",
-                    (int(left_elbow_2d.x * w), int(left_elbow_2d.y * h)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    2,
-                )
+            cv2.putText(
+                image,
+                f"Flex: {forearm_orientation['flexion_extension']:.1f}",
+                (int(left_elbow_2d.x * w), int(left_elbow_2d.y * h) - 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 255, 0),
+                1,
+            )
 
-            if left_shoulder_angle:
-                # print(left_shoulder_angle)
-                cv2.putText(
-                    image,
-                    f"Shoulder: {left_shoulder_angle:.1f}",
-                    (int(left_shoulder_2d.x * w), int(left_shoulder_2d.y * h)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    2,
-                )
+            # cv2.putText(
+            #     image,
+            #     f"Flex: {forearm_orientation['abduction_adduction']:.1f}",
+            #     (int(left_elbow_2d.x * w), int(left_elbow_2d.y * h)),
+            #     cv2.FONT_HERSHEY_SIMPLEX,
+            #     0.4,
+            #     (255, 255, 0),
+            #     1,
+            # )
+
+            cv2.putText(
+                image,
+                f"Flex: {upper_arm_orientation['flexion_extension']:.1f}",
+                (int(left_shoulder_2d.x * w), int(left_shoulder_2d.y * h) - 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 255, 0),
+                1,
+            )
+
+            cv2.putText(
+                image,
+                f"Abd: {upper_arm_orientation['abduction_adduction']:.1f}",
+                (int(left_shoulder_2d.x * w), int(left_shoulder_2d.y * h)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 255, 0),
+                1,
+            )
 
         pose_connections = [
             conn
