@@ -59,3 +59,14 @@
 
 - Finished proposal document and planning
 - Finished project risks
+
+21/10/25
+
+- Extended [this](https://github.com/sudeepksharma/Human-Pose-Estimation-using-Opencv) gitrepo to calculate 3d joint vectors from mediapipe's 3D joint position data
+  - Playing around with various ways of calculation joints, including using 2D angle data, projecting onto the plane of the chest / hip angles.
+- Designing a hypothetical experiment for measuring the 'accuracy' of the joint tracking method.
+
+# Joint tracking experiment
+
+- The goal: compare accuracy between two methods of computer vision joint tracking.
+
