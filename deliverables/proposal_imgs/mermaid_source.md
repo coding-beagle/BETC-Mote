@@ -11,8 +11,8 @@ gantt
       Report methodology: crit, after INTRO, 30d
     section Development
       Initial method research     : 2025-10-13, 5d
-      Marker Tracking: 2025-10-18, 21d
-      Pose estimation   : 2025-11-08, 21d
+      Pose Estimation: 2025-10-18, 21d
+      Marker Tracking   : 2025-11-08, 21d
       Simulation integration : 2025-11-29, 21d
 ```
 

@@ -14,8 +14,8 @@
 % This is where the document title and author are set. Other details for the title page are set later
 % Note that if/when you edit these you may need to 'Recompile from scratch' to get the changes to display in the PDF. (In Overleaf, select the down arrow to the right of the 'Recompile' button)
 \begin{filecontents*}{\jobname.xmpdata}
-  \Title{BEng and MSc final dissertation \LaTeX\ template EEE} 
-  \Author{123456} % should be student number rather than name to help with annoymous marking
+  \Title{BEng final dissertation} 
+  \Author{11006231} % should be student number rather than name to help with annoymous marking
   \Language{en-GB}
   \Copyrighted{True}
   % More meta-data fielda can be added here if wanted, see https://ctan.org/pkg/pdfx?lang=en for fields
@@ -23,7 +23,7 @@
 
 
 %%%%%%%%%%%%%%%%%% DOCUMENT SETUP %%%%%%%%%%%%%%%%%%
-\documentclass[11pt,meng]{uom_eee_dissertation_casson} % course can be msc or beng
+\documentclass[11pt,beng]{uom_eee_dissertation_casson} % course can be msc or beng
 % Check your course handbook for the correct font size to use. Make sure this is correct - you may get an overlength penalty if not! Is currently 12 for BEng, and 11 for MSc. The template doesn't change this automatically for you
 
 
@@ -148,11 +148,16 @@ Acknowledgments go here.
 %%%%%%%%%%%%%%%%%% INTRODUCTION %%%%%%%%%%%%%%%%%%
 \section{Introduction} % can use \input{} or \include{} for each section to draw content from other files rather than having everything in one big file
   
-  \lipsum[1-5] % generate dummy text for here
+  The goal of this project is to create a system for controlling and teleoperating a robot arm with a human arm. 
+  In order to maintain simplicity in the project scope, the robot arm is assumed to be laterally mounted and has the same degrees of freedom (DoF) as a healthy human arm.
 
   \subsection{Background and motivation}
-  \lipsum[1-2]
+  The motivation for this project comes from articles within the books: Revitalizing Human-Robot Interaction \cite{ref:Zhou_Yang_Wang_Dong_2025} and Human Robot Awareness and Robot Teleoperation\cite{ref:Lyu_Yang_Yang_2025}, which both describes research into remote teleoperation of laterally mounted robot arms.
+  Both articles describe the use of an inertial measurement unit (IMU) based solution to obtain data from the human operator.
+  The limitation in both of these articles is that they only map the end effector position of the robot arm to the wrist position, which leaves the position and orientation of the lower segments ambiguous.
   
+  Whilst not necessarily critical 
+
   \subsection{Aims and objectives}
   \lipsum[6-7].
   

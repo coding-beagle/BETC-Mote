@@ -1,9 +1,12 @@
 import cv2
 import mediapipe as mp
 import numpy as np
+import csv
 
 mp_drawing = mp.solutions.drawing_utils
 mp_holistic = mp.solutions.holistic
+
+FILE_PATH = "../../../datasets/pose_estimation/test1.mp4"
 
 
 def rotation_matrix_from_vectors(vec1, vec2):
@@ -192,133 +195,153 @@ def calculate_limb_orientation_relative_to_body(
     }
 
 
-cap = cv2.VideoCapture(0 + cv2.CAP_DSHOW)
+# cap = cv2.VideoCapture(0 + cv2.CAP_DSHOW)
+cap = cv2.VideoCapture(FILE_PATH)
+
+RES = (1920, 1080)
+OUTFILE = "forearm.csv"
+frame = 0
+
 with mp_holistic.Holistic(
     min_detection_confidence=0.5, min_tracking_confidence=0.5
 ) as holistic:
-    while cap.isOpened():
-        success, image = cap.read()
-        if not success:
-            print("Ignoring empty camera frame.")
-            break
+    with open(OUTFILE, "+w") as f:
+        csv_writer = csv.writer(f, delimiter=";", lineterminator=";\n")
+        csv_writer.writerow(["Frame", "Elbow Angle"])
+        while cap.isOpened():
+            success, image = cap.read()
+            if not success:
+                print("Ignoring empty camera frame. End of video!")
+                break
 
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image.flags.writeable = False
-        results = holistic.process(image)
-        image.flags.writeable = True
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            image = cv2.resize(image, RES, image)
+            image = cv2.rotate(image, rotateCode=cv2.ROTATE_90_CLOCKWISE)
 
-        # Extract positions and angles
-        if results.pose_landmarks:
-            landmarks = results.pose_world_landmarks.landmark
-            landmarks_2d = results.pose_landmarks.landmark
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image.flags.writeable = False
+            results = holistic.process(image)
+            image.flags.writeable = True
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-            # Calculate body reference frame
-            hip_center, forward_vec, up_vec, right_vec = calculate_body_reference_frame(
-                landmarks
-            )
+            pose_connections = [
+                conn
+                for conn in mp_holistic.POSE_CONNECTIONS
+                if conn[0] > 10 and conn[1] > 10
+            ]
 
-            # Get specific joint positions
-            left_shoulder = landmarks[mp_holistic.PoseLandmark.LEFT_SHOULDER]
-            left_elbow = landmarks[mp_holistic.PoseLandmark.LEFT_ELBOW]
-            left_wrist = landmarks[mp_holistic.PoseLandmark.LEFT_WRIST]
-            left_hip = landmarks[mp_holistic.PoseLandmark.LEFT_HIP]
+            body_landmarks = None
 
-            left_elbow_2d = landmarks_2d[mp_holistic.PoseLandmark.LEFT_ELBOW]
-            left_shoulder_2d = landmarks_2d[mp_holistic.PoseLandmark.LEFT_SHOULDER]
+            # Only draw body landmarks (indices 11 and above)
+            if results.pose_landmarks:
+                # Create a copy of pose_landmarks with only body landmarks
+                from mediapipe.framework.formats import landmark_pb2
 
-            # Calculate simple 3D angles
-            left_elbow_angle = calculate_angle_3d(left_shoulder, left_elbow, left_wrist)
+                body_landmarks = landmark_pb2.NormalizedLandmarkList()
+                for i, landmark in enumerate(results.pose_landmarks.landmark):
+                    if i >= 11:  # Skip face landmarks (0-10)
+                        body_landmarks.landmark.add().CopyFrom(landmark)
+                    else:
+                        # Add invisible dummy landmarks to maintain indexing
+                        dummy = body_landmarks.landmark.add()
+                        dummy.x = 0
+                        dummy.y = 0
+                        dummy.z = 0
+                        dummy.visibility = 0
 
-            # Calculate upper arm orientation relative to body
-            upper_arm_orientation = calculate_limb_orientation_relative_to_body(
-                left_shoulder, left_elbow, forward_vec, up_vec, right_vec
-            )
+            mp_drawing.draw_landmarks(image, body_landmarks, pose_connections)
 
-            # Calculate forearm orientation relative to body
-            forearm_orientation = calculate_limb_orientation_relative_to_body(
-                left_elbow, left_wrist, forward_vec, up_vec, right_vec
-            )
+            # Extract positions and angles
+            if results.pose_landmarks:
+                landmarks = results.pose_world_landmarks.landmark
+                landmarks_2d = results.pose_landmarks.landmark
 
-            # Print results
-            # print(f"Left Elbow Flexion: {left_elbow_angle:.2f}°")
-            # print(
-            #     f"Upper Arm - Flex/Ext: {upper_arm_orientation['flexion_extension']:.1f}°, "
-            #     f"Abd/Add: {upper_arm_orientation['abduction_adduction']:.1f}°, "
-            #     f"Rotation: {upper_arm_orientation['rotation']:.1f}°"
-            # )
+                # Calculate body reference frame
+                hip_center, forward_vec, up_vec, right_vec = (
+                    calculate_body_reference_frame(landmarks)
+                )
 
-            # Display on image
-            h, w, _ = image.shape
-            cv2.putText(
-                image,
-                f"Flex: {forearm_orientation['flexion_extension']:.1f}",
-                (int(left_elbow_2d.x * w), int(left_elbow_2d.y * h) - 20),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.4,
-                (255, 255, 0),
-                1,
-            )
+                # Get specific joint positions
+                left_shoulder = landmarks[mp_holistic.PoseLandmark.RIGHT_SHOULDER]
+                left_elbow = landmarks[mp_holistic.PoseLandmark.RIGHT_ELBOW]
+                left_wrist = landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST]
+                left_hip = landmarks[mp_holistic.PoseLandmark.RIGHT_HIP]
 
-            # cv2.putText(
-            #     image,
-            #     f"Flex: {forearm_orientation['abduction_adduction']:.1f}",
-            #     (int(left_elbow_2d.x * w), int(left_elbow_2d.y * h)),
-            #     cv2.FONT_HERSHEY_SIMPLEX,
-            #     0.4,
-            #     (255, 255, 0),
-            #     1,
-            # )
+                left_elbow_2d = landmarks_2d[mp_holistic.PoseLandmark.RIGHT_ELBOW]
+                left_shoulder_2d = landmarks_2d[mp_holistic.PoseLandmark.RIGHT_SHOULDER]
 
-            cv2.putText(
-                image,
-                f"Flex: {upper_arm_orientation['flexion_extension']:.1f}",
-                (int(left_shoulder_2d.x * w), int(left_shoulder_2d.y * h) - 20),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.4,
-                (255, 255, 0),
-                1,
-            )
+                # Calculate simple 3D angles
+                left_elbow_angle = calculate_angle_3d(
+                    left_shoulder, left_elbow, left_wrist
+                )
 
-            cv2.putText(
-                image,
-                f"Abd: {upper_arm_orientation['abduction_adduction']:.1f}",
-                (int(left_shoulder_2d.x * w), int(left_shoulder_2d.y * h)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.4,
-                (255, 255, 0),
-                1,
-            )
+                # Calculate upper arm orientation relative to body
+                upper_arm_orientation = calculate_limb_orientation_relative_to_body(
+                    left_shoulder, left_elbow, forward_vec, up_vec, right_vec
+                )
 
-        pose_connections = [
-            conn
-            for conn in mp_holistic.POSE_CONNECTIONS
-            if conn[0] > 10 and conn[1] > 10
-        ]
+                # Calculate forearm orientation relative to body
+                forearm_orientation = calculate_limb_orientation_relative_to_body(
+                    left_elbow, left_wrist, forward_vec, up_vec, right_vec
+                )
 
-        body_landmarks = None
+                # Print results
+                # print(f"Left Elbow Flexion: {left_elbow_angle:.2f}°")
+                # print(
+                #     f"Upper Arm - Flex/Ext: {upper_arm_orientation['flexion_extension']:.1f}°, "
+                #     f"Abd/Add: {upper_arm_orientation['abduction_adduction']:.1f}°, "
+                #     f"Rotation: {upper_arm_orientation['rotation']:.1f}°"
+                # )
 
-        # Only draw body landmarks (indices 11 and above)
-        if results.pose_landmarks:
-            # Create a copy of pose_landmarks with only body landmarks
-            from mediapipe.framework.formats import landmark_pb2
+                # Display on image
+                h, w, _ = image.shape
+                cv2.putText(
+                    image,
+                    f"Flex: {forearm_orientation['flexion_extension']:.1f}",
+                    (int(left_elbow_2d.x * w), int(left_elbow_2d.y * h) - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    (255, 255, 0),
+                    1,
+                )
 
-            body_landmarks = landmark_pb2.NormalizedLandmarkList()
-            for i, landmark in enumerate(results.pose_landmarks.landmark):
-                if i >= 11:  # Skip face landmarks (0-10)
-                    body_landmarks.landmark.add().CopyFrom(landmark)
-                else:
-                    # Add invisible dummy landmarks to maintain indexing
-                    dummy = body_landmarks.landmark.add()
-                    dummy.x = 0
-                    dummy.y = 0
-                    dummy.z = 0
-                    dummy.visibility = 0
+                csv_writer.writerow([frame, forearm_orientation["flexion_extension"]])
 
-        mp_drawing.draw_landmarks(image, body_landmarks, pose_connections)
-        cv2.imshow("Whole body capture", image)
-        if cv2.waitKey(1) & 0xFF == 27:
-            break
+                # cv2.putText(
+                #     image,
+                #     f"Flex: {forearm_orientation['abduction_adduction']:.1f}",
+                #     (int(left_elbow_2d.x * w), int(left_elbow_2d.y * h)),
+                #     cv2.FONT_HERSHEY_SIMPLEX,
+                #     0.4,
+                #     (255, 255, 0),
+                #     1,
+                # )
+
+                cv2.putText(
+                    image,
+                    f"Flex: {upper_arm_orientation['flexion_extension']:.1f}",
+                    (int(left_shoulder_2d.x * w), int(left_shoulder_2d.y * h) - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    (255, 255, 0),
+                    1,
+                )
+
+                cv2.putText(
+                    image,
+                    f"Abd: {upper_arm_orientation['abduction_adduction']:.1f}",
+                    (int(left_shoulder_2d.x * w), int(left_shoulder_2d.y * h)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    (255, 255, 0),
+                    1,
+                )
+
+            frame += 1
+            print(f"Analysed frame {frame}")
+
+            # cv2.imshow("Whole body capture", image)
+            # if cv2.waitKey(1) & 0xFF == 27:
+            #     break
 
 cap.release()
 cv2.destroyAllWindows()
