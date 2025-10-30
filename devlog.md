@@ -70,3 +70,20 @@
 
 - The goal: compare accuracy between two methods of computer vision joint tracking.
 
+30/10/25
+
+- Working on introduction
+- Gathered preliminary data for pose tracking
+- Creating programs for plotting and processing data (for later scaling)
+- Still on track with schedule
+
+- ![](imgs/simple_plot.png)
+
+- PRM Talking points
+  - What skills do I need to learn?
+    - aruco marker tracking with opencv
+      - I've already got a method for inferring joint angles when XYZ of joint positions are known, if we can figure out how to obtain this data from the marker tracking then we'll be good
+    - CoppeliaSim
+      - Robot simulation stuff
+      - URDF manipulation (for getting correct robot behaviour + dimensions)
+  - 
