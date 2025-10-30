@@ -155,7 +155,7 @@ Acknowledgments go here.
   The motivation for this project comes from articles within the books: \citetitle{ref:Zhou_Yang_Wang_Dong_2025} \cite{ref:Zhou_Yang_Wang_Dong_2025} and \citetitle{ref:Lyu_Yang_Yang_2025} \cite{ref:Lyu_Yang_Yang_2025}, which both describe research into remote teleoperation of shoulder-mounted robot arms.
   Both articles describe the use of an inertial measurement unit (IMU) based solution to obtain data from the human operator.
   The limitation in both of these articles is that they only map the end effector position of the robot arm to the wrist position.
-  Because the human arm has redundancy in the number of joints available \cite{ref:nullspace}, a robot arm only mapping the end effector position could end up with its forearm or upper arm in an unwanted position.  
+  Because the human arm has redundancy in the number of joints available \cite{ref:nullspace}, a robot arm only mapping the end effector position could end up with its forearm or upper arm in a position that causes collisions, even though the end effector is in the target position.  
   This ambiguity could lead to collisions with obstacles in the environment, and lack of safety for people within the envelope of the robot arm. 
   
   Whilst not necessarily critical in the use cases that \citeauthor{ref:Zhou_Yang_Wang_Dong_2025} and \citeauthor{ref:Lyu_Yang_Yang_2025} describe - remote welding inspection and simple delivery and manipulation tasks for an elderly patient - a scenario that is obstacle rich would require precise control of the robot arm.
@@ -163,10 +163,13 @@ Acknowledgments go here.
   Whilst \citeauthor{ref:Jin_Ji_Yan_2023} describes a potential autonomous solution \cite{ref:Jin_Ji_Yan_2023}, this method is comparatively slow to the prospect of remote teleoperation: ranging from five to nine seconds in the simple case where the target object and origin of the robot arm is stationary.
   Consequently, the complexity increase for the case where nothing is stationary, a more realistic use case, would mean that this method would be inefficient compared to the intuition of a trained operator. 
 
-  These limitations suggest a potential the need for a more comprehensive tracking and mapping approach that uses the full kinematic data available from the operator.
+  Other potential areas of application of full arm tracking could be in the medical industry and with surgical robots, where collisions with patients is unwanted. 
+  Likewise, nuclear decommissioning robots where absolute accuracy of matching an operator's intentions is critical.
+
+  These limitations suggest the need for a more comprehensive tracking and mapping approach that uses the full kinematic data available from the operator.
 
   \subsection{Aims and objectives}
-  The overall aim remains to create a system for mapping the joint angles of a human arm to a shoulder-mounted robot arm.
+  The overall aim is to create a system for mapping the joint angles of a human arm to a shoulder-mounted robot arm.
 
   To achieve this goal, there will be an evaluation of available arm tracking methods. 
   Many methods currently exist for tracking the joint angles of robot arms, including: IMU based solutions discussed earlier, attitude and heading reference systems \cite{ref:Mazomenos_Biswas_Cranny_Rajan_Maharatna_Achner_Klemke_Jobges_Ortmann_Langendorfer_2016}, computer vision based systems \cite{ref:Phuong_Cong_2024}, and flex sensor based systems \cite{ref:Nalam_Manivannan_2014}, among others.
