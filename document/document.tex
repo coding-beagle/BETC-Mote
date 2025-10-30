@@ -149,20 +149,34 @@ Acknowledgments go here.
 \section{Introduction} % can use \input{} or \include{} for each section to draw content from other files rather than having everything in one big file
   
   The goal of this project is to create a system for controlling and teleoperating a robot arm with a human arm. 
-  In order to maintain simplicity in the project scope, the robot arm is assumed to be laterally mounted and has the same degrees of freedom (DoF) as a healthy human arm.
+  In order to maintain simplicity in the project scope, the robot arm is assumed to be shoulder-mounted and has the seven degrees of freedom (DoF) \cite{ref:arm_dofs}, matching that of a healthy human arm.
 
   \subsection{Background and motivation}
-  The motivation for this project comes from articles within the books: Revitalizing Human-Robot Interaction \cite{ref:Zhou_Yang_Wang_Dong_2025} and Human Robot Awareness and Robot Teleoperation\cite{ref:Lyu_Yang_Yang_2025}, which both describes research into remote teleoperation of laterally mounted robot arms.
+  The motivation for this project comes from articles within the books: \citetitle{ref:Zhou_Yang_Wang_Dong_2025} \cite{ref:Zhou_Yang_Wang_Dong_2025} and \citetitle{ref:Lyu_Yang_Yang_2025} \cite{ref:Lyu_Yang_Yang_2025}, which both describe research into remote teleoperation of shoulder-mounted robot arms.
   Both articles describe the use of an inertial measurement unit (IMU) based solution to obtain data from the human operator.
-  The limitation in both of these articles is that they only map the end effector position of the robot arm to the wrist position, which leaves the position and orientation of the lower segments ambiguous.
+  The limitation in both of these articles is that they only map the end effector position of the robot arm to the wrist position.
+  Because the human arm has redundancy in the number of joints available \cite{ref:nullspace}, a robot arm only mapping the end effector position could end up with its forearm or upper arm in an unwanted position.  
+  This ambiguity could lead to collisions with obstacles in the environment, and lack of safety for people within the envelope of the robot arm. 
   
-  Whilst not necessarily critical 
+  Whilst not necessarily critical in the use cases that \citeauthor{ref:Zhou_Yang_Wang_Dong_2025} and \citeauthor{ref:Lyu_Yang_Yang_2025} describe - remote welding inspection and simple delivery and manipulation tasks for an elderly patient - a scenario that is obstacle rich would require precise control of the robot arm.
+  One such scenario is an underwater environment where a telescopic robot arm is attempting to collect a sample. 
+  Whilst \citeauthor{ref:Jin_Ji_Yan_2023} describes a potential autonomous solution \cite{ref:Jin_Ji_Yan_2023}, this method is comparatively slow to the prospect of remote teleoperation: ranging from five to nine seconds in the simple case where the target object and origin of the robot arm is stationary.
+  Consequently, the complexity increase for the case where nothing is stationary, a more realistic use case, would mean that this method would be inefficient compared to the intuition of a trained operator. 
+
+  These limitations suggest a potential the need for a more comprehensive tracking and mapping approach that uses the full kinematic data available from the operator.
 
   \subsection{Aims and objectives}
-  \lipsum[6-7].
-  
-  \subsection{Report structure}
-  \lipsum[8]
+  The overall aim remains to create a system for mapping the joint angles of a human arm to a shoulder-mounted robot arm.
+
+  To achieve this goal, there will be an evaluation of available arm tracking methods. 
+  Many methods currently exist for tracking the joint angles of robot arms, including: IMU based solutions discussed earlier, attitude and heading reference systems \cite{ref:Mazomenos_Biswas_Cranny_Rajan_Maharatna_Achner_Klemke_Jobges_Ortmann_Langendorfer_2016}, computer vision based systems \cite{ref:Phuong_Cong_2024}, and flex sensor based systems \cite{ref:Nalam_Manivannan_2014}, among others.
+  A rigorous examination of these methods will be conducted as a prerequisite to the final implementation, to understand the applicability and feasibility of each tracking system.
+  Relevant tracking metrics will be discussed in the methodology section, but include cost, accuracy, engineering complexity, etc.
+
+  Finally, it is acknowledged that the procurement of a seven DoF robot arm is unlikely for a Bachelor's thesis. 
+  Hence, the final implementation of the tracking method will be created in the form of a simulation in CoppeliaSim.
+  This has the advantage of being able to set up precise scenes for the evaluation of the final tracking method chosen, as well as comparison with baseline methods such as joysticks or pure end effector mapping.
+  Likewise, the robot could be customised to match the proportions of the operator's arm perfectly, which would increase ease of use for the operator.
 
 
 %%%%%%%%%%%%%%%%%% LITERATURE REVIEW %%%%%%%%%%%%%%%%%%
