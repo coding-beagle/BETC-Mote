@@ -1,0 +1,8 @@
+- Evidence of achieving and analysis
+  - So what?
+  - Overall sentiment is positive
+- Figure out 1:1 mapping strategy
+  - How good is good enough?
+    - Angular velocity mapping
+    - Temporal sampling
+  - 
