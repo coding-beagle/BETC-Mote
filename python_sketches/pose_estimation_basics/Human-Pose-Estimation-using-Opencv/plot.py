@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import csv
 
 # Read the CSV file
-filename = "forearm.csv"  # Change this to your CSV filename
+filename = "batchsample1_trimmed.csv"  # Change this to your CSV filename
 
 frames = []
 elbow_angles = []
