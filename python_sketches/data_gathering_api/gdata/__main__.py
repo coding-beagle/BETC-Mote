@@ -89,7 +89,7 @@ def trim_video_file_and_write(video_path, out_path, start, end):
     output.release()
 
 
-def process_one_video(video_path, out_csv_path):
+def process_one_video(video_path, out_csv_path, draw=False):
     click.echo(f"Processing {video_path}, will write to {out_csv_path}")
 
     # Check if video file exists
@@ -111,18 +111,34 @@ def process_one_video(video_path, out_csv_path):
         click.echo(f"ERROR opening video: {e}")
         return
 
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    output_width, output_height = width, height
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    output = None
+
     out_csv_name = out_csv_path
     frame = 0
 
-    mp_drawing = mp.solutions.drawing_utils
+    mp_drawing = None
+    if draw:
+        mp_drawing = mp.solutions.drawing_utils
+        click.echo(
+            f"Creating drawing output to {video_path.split('.MP4')[0] + '_drawn.mp4'}"
+        )
+        output = cv2.VideoWriter(
+            video_path.split(".MP4")[0] + "_drawn.mp4",
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            int(fps),
+            (output_height, output_width),
+        )
+
     mp_holistic = mp.solutions.holistic
 
     try:
         click.echo("About to create Holistic context...")
-        with mp_holistic.Holistic(
-            min_detection_confidence=0.5, min_tracking_confidence=0.5
-        ) as holistic:
-            click.echo("Successfully started holistic")
         with mp_holistic.Holistic(
             min_detection_confidence=0.5, min_tracking_confidence=0.5
         ) as holistic:
@@ -138,43 +154,50 @@ def process_one_video(video_path, out_csv_path):
                         click.echo("REACHED END OF VIDEO")
                         break
 
+                    if draw:
+                        image = cv2.rotate(image, rotateCode=cv2.ROTATE_90_CLOCKWISE)
+
                     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                     image.flags.writeable = False
                     results = holistic.process(image)
                     image.flags.writeable = True
                     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-                    # pose_connections = [
-                    #     conn
-                    #     for conn in mp_holistic.POSE_CONNECTIONS
-                    #     if conn[0] > 10 and conn[1] > 10
-                    # ]
+                    if draw:
+                        pose_connections = [
+                            conn
+                            for conn in mp_holistic.POSE_CONNECTIONS
+                            if conn[0] > 10 and conn[1] > 10
+                        ]
 
-                    # body_landmarks = None
+                        body_landmarks = None
 
-                    # Only draw body landmarks (indices 11 and above)
-                    # if results.pose_landmarks:
-                    #     # Create a copy of pose_landmarks with only body landmarks
-                    #     from mediapipe.framework.formats import landmark_pb2
+                        # Only draw body landmarks (indices 11 and above)
+                        if results.pose_landmarks:
+                            # Create a copy of pose_landmarks with only body landmarks
+                            from mediapipe.framework.formats import landmark_pb2
 
-                    #     body_landmarks = landmark_pb2.NormalizedLandmarkList()
-                    #     for i, landmark in enumerate(results.pose_landmarks.landmark):
-                    #         if i >= 11:  # Skip face landmarks (0-10)
-                    #             body_landmarks.landmark.add().CopyFrom(landmark)
-                    #         else:
-                    #             # Add invisible dummy landmarks to maintain indexing
-                    #             dummy = body_landmarks.landmark.add()
-                    #             dummy.x = 0
-                    #             dummy.y = 0
-                    #             dummy.z = 0
-                    #             dummy.visibility = 0
+                            body_landmarks = landmark_pb2.NormalizedLandmarkList()
+                            for i, landmark in enumerate(
+                                results.pose_landmarks.landmark
+                            ):
+                                if i >= 11:  # Skip face landmarks (0-10)
+                                    body_landmarks.landmark.add().CopyFrom(landmark)
+                                else:
+                                    # Add invisible dummy landmarks to maintain indexing
+                                    dummy = body_landmarks.landmark.add()
+                                    dummy.x = 0
+                                    dummy.y = 0
+                                    dummy.z = 0
+                                    dummy.visibility = 0
 
-                    # mp_drawing.draw_landmarks(image, body_landmarks, pose_connections)
+                        mp_drawing.draw_landmarks(
+                            image, body_landmarks, pose_connections
+                        )
 
                     # Extract positions and angles
                     if results.pose_landmarks:
                         landmarks = results.pose_world_landmarks.landmark
-                        # landmarks_2d = results.pose_landmarks.landmark
 
                         # # Calculate body reference frame
                         hip_center, forward_vec, up_vec, right_vec = (
@@ -188,13 +211,6 @@ def process_one_video(video_path, out_csv_path):
                         left_elbow = landmarks[mp_holistic.PoseLandmark.RIGHT_ELBOW]
                         left_wrist = landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST]
                         # left_hip = landmarks[mp_holistic.PoseLandmark.RIGHT_HIP]
-
-                        # left_elbow_2d = landmarks_2d[
-                        #     mp_holistic.PoseLandmark.RIGHT_ELBOW
-                        # ]
-                        # left_shoulder_2d = landmarks_2d[
-                        #     mp_holistic.PoseLandmark.RIGHT_SHOULDER
-                        # ]
 
                         # # Calculate simple 3D angles
                         # left_elbow_angle = calculate_angle_3d(
@@ -226,18 +242,30 @@ def process_one_video(video_path, out_csv_path):
                         #     f"Abd/Add: {upper_arm_orientation['abduction_adduction']:.1f}°, "
                         #     f"Rotation: {upper_arm_orientation['rotation']:.1f}°"
                         # )
+                        if draw:
+                            landmarks_2d = results.pose_landmarks.landmark
 
-                        # Display on image
-                        # h, w, _ = image.shape
-                        # cv2.putText(
-                        #     image,
-                        #     f"Flex: {forearm_orientation['flexion_extension']:.1f}",
-                        #     (int(left_elbow_2d.x * w), int(left_elbow_2d.y * h) - 20),
-                        #     cv2.FONT_HERSHEY_SIMPLEX,
-                        #     0.4,
-                        #     (255, 255, 0),
-                        #     1,
-                        # )
+                            left_elbow_2d = landmarks_2d[
+                                mp_holistic.PoseLandmark.RIGHT_ELBOW
+                            ]
+                            left_shoulder_2d = landmarks_2d[
+                                mp_holistic.PoseLandmark.RIGHT_SHOULDER
+                            ]
+                            # Display on image
+                            h, w, _ = image.shape
+                            cv2.putText(
+                                image,
+                                f"Flex: {forearm_orientation['flexion_extension']:.1f}",
+                                (
+                                    int(left_elbow_2d.x * w),
+                                    int(left_elbow_2d.y * h) - 20,
+                                ),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                2,
+                                (255, 255, 0),
+                                2,
+                            )
+                            output.write(image)
 
                         csv_writer.writerow(
                             [frame, forearm_orientation["flexion_extension"]]
@@ -283,6 +311,9 @@ def process_one_video(video_path, out_csv_path):
         import traceback
 
         click.echo(traceback.format_exc())
+
+    cap.release()
+    output.release()
 
 
 @cli.command()
@@ -344,14 +375,15 @@ def trim_video(video, outfile, start, end):
 @click.argument(
     "video_path", type=click.Path(exists=True, file_okay=True, dir_okay=False)
 )
-def process_one(video_path):
+@click.option("--draw", default=False, is_flag=True)
+def process_one(video_path, draw):
     file_name = video_path.split("/")[-1]
     file_name_no_extension = file_name.split(".")[0]
     folder_path = video_path[: -len(file_name)]
     csv_path = f"{folder_path}{file_name_no_extension}.csv"
     click.echo(f"Processing {file_name_no_extension}")
 
-    process_one_video(video_path, csv_path)
+    process_one_video(video_path, csv_path, draw)
 
 
 @cli.command()
