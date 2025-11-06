@@ -5,4 +5,3 @@
   - How good is good enough?
     - Angular velocity mapping
     - Temporal sampling
-  - 

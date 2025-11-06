@@ -7,6 +7,11 @@ mp_drawing = mp.solutions.drawing_utils
 mp_holistic = mp.solutions.holistic
 
 FILE_PATH = "../../../datasets/pose_estimation/test1.mp4"
+OUT_VID_PATH = "output.avi"
+START_FRAME = 500
+# END_FRAME = 3357
+END_FRAME = 600
+WRITE_OUT = True
 
 
 def rotation_matrix_from_vectors(vec1, vec2):
@@ -197,6 +202,9 @@ def calculate_limb_orientation_relative_to_body(
 
 # cap = cv2.VideoCapture(0 + cv2.CAP_DSHOW)
 cap = cv2.VideoCapture(FILE_PATH)
+output = cv2.VideoWriter(
+    OUT_VID_PATH, cv2.VideoWriter_fourcc(*"MPEG"), 60, (1080, 1920)
+)
 
 RES = (1920, 1080)
 OUTFILE = "forearm.csv"
@@ -210,9 +218,14 @@ with mp_holistic.Holistic(
         csv_writer.writerow(["Frame", "Elbow Angle"])
         while cap.isOpened():
             success, image = cap.read()
-            if not success:
-                print("Ignoring empty camera frame. End of video!")
+            frame += 1
+
+            if not success or frame > END_FRAME:
+                print("REACHED END OF VIDEO")
                 break
+
+            if frame < START_FRAME:
+                continue
 
             image = cv2.resize(image, RES, image)
             image = cv2.rotate(image, rotateCode=cv2.ROTATE_90_CLOCKWISE)
@@ -339,9 +352,10 @@ with mp_holistic.Holistic(
             frame += 1
             print(f"Analysed frame {frame}")
 
-            # cv2.imshow("Whole body capture", image)
-            # if cv2.waitKey(1) & 0xFF == 27:
-            #     break
+            if WRITE_OUT:
+                output.write(image)
+
 
 cap.release()
+output.release()
 cv2.destroyAllWindows()
