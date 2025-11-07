@@ -13,7 +13,7 @@ from .utils.utils import *
 
 @click.group()
 def cli():
-    """Example script."""
+    """GData - Bulk Video Editor + Pose Analysis CLI tool"""
     pass
 
 
