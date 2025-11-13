@@ -19,5 +19,15 @@ Deliverables / Proposed project scope:
     - Test simulation could also include path tracing exercises
     - We will compare the approach of a conventional joystick, this device with only end effector position mapping, and full fusion joint mapping.
 
-- [ ] Do Academ Malprac Aware.
+- [x] Do Academ Malprac Aware.
 
+- To Achieve 13/11/25:
+  - [x] Create vector between two points
+  - [x] Get angle between three points
+    - [x] Create vector between two points for AB and BC, then do dot product
+  - [ ] Create normal to plane between three non colinear points
+    - [ ] 
+  - [ ] Get angle of a vector relative to fixed plane
+    - [ ] ?
+  - [ ] Single method for extracting joint positions from an image via media pipe
+  - [ ] Single method for extracting joint angles of the arm via above ^
