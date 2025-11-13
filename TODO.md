@@ -28,5 +28,5 @@ Deliverables / Proposed project scope:
   - [x] Create normal to plane between three non colinear points
   - [ ] Get angle of a vector relative to fixed plane
     - [ ] Shoulder Adduction and Abduction is dot product of  
-  - [ ] Single method for extracting joint positions from an image via media pipe
+  - [x] Single method for extracting joint positions from an image via media pipe
   - [ ] Single method for extracting joint angles of the arm via above ^

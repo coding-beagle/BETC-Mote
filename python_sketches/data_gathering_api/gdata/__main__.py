@@ -12,7 +12,7 @@ from matplotlib.widgets import CheckButtons
 import csv
 
 from .utils.utils import *
-from .mediapipe_wrapper.mediapipe_utils import return_all_joint_positions
+from .mediapipe_wrapper.mediapipe_utils import *
 
 
 @click.group()
@@ -809,13 +809,24 @@ def plot_csv(file_path, save, start, end):
 @click.argument(
     "file_path", type=click.Path(exists=True, file_okay=True, dir_okay=False)
 )
-def process_img(file_path):
+@click.option("-s", "--show", is_flag=True, default=False)
+def process_img(file_path, show):
     click.echo(f"Searching for file {file_path}")
 
     img = cv2.imread(file_path)
+    img_copy = img.copy()
 
-    positions = return_all_joint_positions(img)
+    positions = return_all_relevant_joint_positions(img, show)
 
-    click.echo(positions)
+    if show:
+        img_resized = cv2.resize(img_copy, [500, 700])
+        cv2.imshow("Found image", img_resized)
 
-    cv2.imshow("Found image", img)
+        resized_landmarks = cv2.resize(positions.image, [500, 700])
+        left_shoulder = convert_landmark_2d_to_pixel_coordinates(
+            500, 700, positions.joint_pos2d["LEFT_SHOULDER"]
+        )
+        cv2.circle(resized_landmarks, left_shoulder, 10, [255, 0, 255], 2)
+        cv2.imshow("Landmark Positions", resized_landmarks)
+
+        cv2.waitKey(0)
