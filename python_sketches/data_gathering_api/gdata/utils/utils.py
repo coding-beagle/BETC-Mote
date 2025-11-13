@@ -50,4 +50,14 @@ def normal_vector_of_plane_on_three_points(a, b, c, unit_vec=True) -> np.ndarray
 
     normal = np.cross(vec_a, vec_b)
 
-    return normal * 1 / (magnitude(normal)) if unit_vec else False
+    return normal * 1 / (magnitude(normal)) if unit_vec else normal
+
+
+def transform_vector_in_relation_to_body_plane(
+    a, body_normal, right_vector, up_vector
+) -> np.ndarray:
+    vec_forward = np.dot(a, body_normal)
+    vec_right = np.dot(a, right_vector)
+    vec_up = np.dot(a, up_vector)
+
+    return np.array([vec_forward, vec_right, vec_up])
