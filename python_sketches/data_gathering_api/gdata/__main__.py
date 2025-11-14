@@ -929,6 +929,8 @@ def process_webcam():
     ax_actual.set_zlabel("Z (m)")
     ax_actual.set_title("Actual Joint Positions (MediaPipe)", fontsize=14)
 
+    angle_text = fig.text(0.5, 0.95, "", fontsize=12, ha="center", color="black")
+
     for ax in [ax_actual]:
         ax.set_xlim([-0.6, 0.6])
         ax.set_ylim([-0.6, 0.6])
@@ -948,6 +950,7 @@ def process_webcam():
                 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
                 results = holistic.process(image_rgb)
+                height, width = image_rgb.shape[:2]
                 positions = JointPositions(
                     image=None, joint_pos=None, joint_pos2d=None, successful=False
                 )
@@ -982,6 +985,24 @@ def process_webcam():
                             "RIGHT_HIP": landmark_to_dict(
                                 landmarks[mp_holistic.PoseLandmark.RIGHT_HIP]
                             ),
+                            "LEFT_THUMB": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.LEFT_THUMB]
+                            ),
+                            "LEFT_PINKY": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.LEFT_PINKY]
+                            ),
+                            "RIGHT_THUMB": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.RIGHT_THUMB]
+                            ),
+                            "RIGHT_PINKY": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.RIGHT_PINKY]
+                            ),
+                            "LEFT_INDEX": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.LEFT_INDEX]
+                            ),
+                            "RIGHT_INDEX": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.RIGHT_INDEX]
+                            ),
                         }
                         positions.joint_pos2d = {
                             "RIGHT_SHOULDER": landmarks_2d[
@@ -1005,6 +1026,9 @@ def process_webcam():
                             "LEFT_HIP": landmarks_2d[mp_holistic.PoseLandmark.LEFT_HIP],
                             "RIGHT_HIP": landmarks_2d[
                                 mp_holistic.PoseLandmark.RIGHT_HIP
+                            ],
+                            "RIGHT_WRIST": landmarks_2d[
+                                mp_holistic.PoseLandmark.RIGHT_WRIST
                             ],
                         }
 
@@ -1050,6 +1074,7 @@ def process_webcam():
                     right_elbow = positions.joint_pos["RIGHT_ELBOW"]
 
                     right_wrist = positions.joint_pos["RIGHT_WRIST"]
+                    hand = positions.joint_pos["RIGHT_INDEX"]
 
                     # click.echo(f"Left Hip {left_hip}")
                     # click.echo(f"Right Hip {right_hip}")
@@ -1080,32 +1105,88 @@ def process_webcam():
                     shoulder_abduction = math.atan2(A_dot_right, A_dot_down)
 
                     right_shoulder_2d_pos = convert_landmark_2d_to_pixel_coordinates(
-                        700, 500, positions.joint_pos2d["RIGHT_SHOULDER"]
+                        height, width, positions.joint_pos2d["RIGHT_SHOULDER"]
+                    )
+
+                    right_elbow_2d_pos = convert_landmark_2d_to_pixel_coordinates(
+                        height, width, positions.joint_pos2d["RIGHT_ELBOW"]
+                    )
+                    right_wrist_2d_pos = convert_landmark_2d_to_pixel_coordinates(
+                        height, width, positions.joint_pos2d["RIGHT_WRIST"]
+                    )
+
+                    elbow_flexion = angle_between_three_points(
+                        right_shoulder, right_elbow, right_wrist
+                    )
+                    wrist_flexion = angle_between_three_points(
+                        right_elbow, right_wrist, hand
+                    )
+
+                    angle_text.set_text(
+                        f"Shoulder Flexion: {shoulder_flexion * RADIAN_TO_DEGREES:.1f}° | "
+                        f"Shoulder Abduction: {shoulder_abduction * RADIAN_TO_DEGREES:.1f}°"
+                        f"Elbow Flexion: {elbow_flexion * RADIAN_TO_DEGREES:.1f}° | "
+                        f"Wrist Flexion: {wrist_flexion * RADIAN_TO_DEGREES:.1f}°"
                     )
 
                     cv2.putText(
-                        image_rgb,
-                        f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES}",
-                        [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 20],
+                        positions.image,
+                        f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES:.2f}",
+                        [right_shoulder_2d_pos[0] + 5, right_shoulder_2d_pos[1] + 5],
                         cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                        1,
-                        [255, 255, 0],
+                        0.5,
+                        [255, 0, 255],
                         1,
                     )
 
                     cv2.putText(
-                        image_rgb,
-                        f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES}",
-                        [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 40],
+                        positions.image,
+                        f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES:.2f}",
+                        [right_shoulder_2d_pos[0] + 5, right_shoulder_2d_pos[1] + 20],
                         cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                        1,
-                        [255, 255, 0],
+                        0.5,
+                        [255, 0, 255],
                         1,
                     )
 
-                    actual_x = [right_shoulder[0], right_elbow[0], right_wrist[0]]
-                    actual_z = [-right_shoulder[1], -right_elbow[1], -right_wrist[1]]
-                    actual_y = [right_shoulder[2], right_elbow[2], right_wrist[2]]
+                    cv2.putText(
+                        positions.image,
+                        f"Elbow flexion = {elbow_flexion * RADIAN_TO_DEGREES:.2f}",
+                        [right_elbow_2d_pos[0], right_elbow_2d_pos[1]],
+                        cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                        0.5,
+                        [255, 0, 255],
+                        1,
+                    )
+
+                    cv2.putText(
+                        positions.image,
+                        f"Wrist Flexion = {wrist_flexion * RADIAN_TO_DEGREES:.2f}",
+                        [right_wrist_2d_pos[0], right_wrist_2d_pos[1]],
+                        cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                        0.5,
+                        [255, 0, 255],
+                        1,
+                    )
+
+                    actual_x = [
+                        right_shoulder[0],
+                        right_elbow[0],
+                        right_wrist[0],
+                        hand[0],
+                    ]
+                    actual_z = [
+                        -right_shoulder[1],
+                        -right_elbow[1],
+                        -right_wrist[1],
+                        -hand[1],
+                    ]
+                    actual_y = [
+                        right_shoulder[2],
+                        right_elbow[2],
+                        right_wrist[2],
+                        hand[2],
+                    ]
                     ## END SHOULDER ROTATION STUFF
 
                 # cv2.imshow("Webcam Feed", image
@@ -1121,9 +1202,11 @@ def process_webcam():
 
                 # Update video display
                 if video_img is None:
-                    video_img = ax_video.imshow(image_rgb)
+                    video_img = ax_video.imshow(
+                        cv2.cvtColor(positions.image, cv2.COLOR_BGR2RGB)
+                    )
                 else:
-                    video_img.set_data(image_rgb)
+                    video_img.set_data(cv2.cvtColor(positions.image, cv2.COLOR_BGR2RGB))
 
                 plt.pause(0.001)
 
@@ -1134,6 +1217,7 @@ def process_webcam():
                 # if cv2.waitKey(1) & 0xFF == ord("q"):
                 #     break
             except Exception as ex:
+                click.echo("Error!")
                 click.echo(ex)
 
     cv2.destroyAllWindows()

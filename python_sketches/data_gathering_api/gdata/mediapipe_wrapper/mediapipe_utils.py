@@ -53,38 +53,54 @@ def return_all_relevant_joint_positions(
             output.successful = True
             landmarks = results.pose_world_landmarks.landmark
             landmarks_2d = results.pose_landmarks.landmark
-            output.joint_pos = {
-                "RIGHT_SHOULDER": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.RIGHT_SHOULDER]
-                ),
-                "RIGHT_WRIST": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST]
-                ),
-                "RIGHT_ELBOW": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.RIGHT_ELBOW]
-                ),
-                "LEFT_SHOULDER": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.LEFT_SHOULDER]
-                ),
-                "LEFT_WRIST": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.LEFT_WRIST]
-                ),
-                "LEFT_ELBOW": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.LEFT_ELBOW]
-                ),
-                "LEFT_HIP": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.LEFT_HIP]
-                ),
-                "RIGHT_HIP": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.RIGHT_HIP]
-                ),
-                "LEFT_WRIST": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.LEFT_WRIST]
-                ),
-                "RIGHT_WRIST": landmark_to_dict(
-                    landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST]
-                ),
-            }
+            try:
+                output.joint_pos = {
+                    "RIGHT_SHOULDER": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.RIGHT_SHOULDER]
+                    ),
+                    "RIGHT_WRIST": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST]
+                    ),
+                    "RIGHT_ELBOW": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.RIGHT_ELBOW]
+                    ),
+                    "LEFT_SHOULDER": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.LEFT_SHOULDER]
+                    ),
+                    "LEFT_WRIST": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.LEFT_WRIST]
+                    ),
+                    "LEFT_ELBOW": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.LEFT_ELBOW]
+                    ),
+                    "LEFT_HIP": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.LEFT_HIP]
+                    ),
+                    "RIGHT_HIP": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.RIGHT_HIP]
+                    ),
+                    "LEFT_WRIST": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.LEFT_WRIST]
+                    ),
+                    "RIGHT_WRIST": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST]
+                    ),
+                    "LEFT_THUMB": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.LEFT_THUMB]
+                    ),
+                    "LEFT_PINKY": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.LEFT_PINKY]
+                    ),
+                    "RIGHT_THUMB": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.RIGHT_THUMB]
+                    ),
+                    "RIGHT_PINKY": landmark_to_dict(
+                        landmarks[mp_holistic.PoseLandmark.RIGHT_PINKY]
+                    ),
+                }
+            except Exception as Ex:
+                print(Ex)
+
             output.joint_pos2d = {
                 "RIGHT_SHOULDER": landmarks_2d[mp_holistic.PoseLandmark.RIGHT_SHOULDER],
                 "RIGHT_WRIST": landmarks_2d[mp_holistic.PoseLandmark.RIGHT_WRIST],
@@ -96,6 +112,10 @@ def return_all_relevant_joint_positions(
                 "RIGHT_HIP": landmarks_2d[mp_holistic.PoseLandmark.RIGHT_HIP],
                 "LEFT_WRIST": landmarks_2d[mp_holistic.PoseLandmark.LEFT_WRIST],
                 "RIGHT_WRIST": landmarks_2d[mp_holistic.PoseLandmark.RIGHT_WRIST],
+                "LEFT_THUMB": landmarks_2d[mp_holistic.PoseLandmark.LEFT_THUMB],
+                "LEFT_PINKY": landmarks_2d[mp_holistic.PoseLandmark.LEFT_PINKY],
+                "RIGHT_THUMB": landmarks_2d[mp_holistic.PoseLandmark.RIGHT_THUMB],
+                "RIGHT_PINKY": landmarks_2d[mp_holistic.PoseLandmark.RIGHT_PINKY],
             }
             if draw:
                 pose_connections = [
