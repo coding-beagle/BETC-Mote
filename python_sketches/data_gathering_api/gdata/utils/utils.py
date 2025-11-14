@@ -69,3 +69,7 @@ def transform_vector_in_relation_to_body_plane(
     vec_up = np.dot(a, up_vector)
 
     return np.array([vec_forward, vec_right, vec_up])
+
+
+def invert_z(a) -> np.ndarray:
+    return np.array([a[0], a[1], -a[2]])

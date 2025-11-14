@@ -788,6 +788,10 @@ def plot_csv(file_path, save, start, end):
 #             else:
 #                 video_img.set_data(image_rgb)
 
+#             Check for window close
+#                         if not plt.fignum_exists(fig.number):
+#                             break
+
 #             # Update display
 #             plt.pause(0.001)
 
@@ -897,3 +901,240 @@ def process_img(file_path, show):
             cv2.waitKey(0)
         except Exception as Ex:
             click.echo(Ex)
+
+
+@cli.command()
+def process_webcam():
+    import mediapipe as mp
+    from mediapipe.framework.formats import landmark_pb2
+
+    cap = cv2.VideoCapture(0 + cv2.CAP_DSHOW)
+    video_img = None
+
+    mp_holistic = mp.solutions.holistic
+    mp_drawing = mp.solutions.drawing_utils
+
+    plt.ion()
+    fig = plt.figure(figsize=(18, 6))
+
+    # Left: video feed
+    ax_video = fig.add_subplot(131)
+    ax_video.axis("off")
+    ax_video.set_title("Video Feed", fontsize=14)
+
+    # Middle: actual joint positions
+    ax_actual = fig.add_subplot(132, projection="3d")
+    ax_actual.set_xlabel("X (m)")
+    ax_actual.set_ylabel("Y (m)")
+    ax_actual.set_zlabel("Z (m)")
+    ax_actual.set_title("Actual Joint Positions (MediaPipe)", fontsize=14)
+
+    for ax in [ax_actual]:
+        ax.set_xlim([-0.6, 0.6])
+        ax.set_ylim([-0.6, 0.6])
+        ax.set_zlim([0.0, 0.8])
+
+    (actual_arm_line,) = ax_actual.plot(
+        [], [], [], "b-", linewidth=3, marker="o", markersize=8, label="Arm"
+    )
+
+    with mp_holistic.Holistic(
+        min_detection_confidence=0.5, min_tracking_confidence=0.5
+    ) as holistic:
+        while True:
+            try:
+                _, image = cap.read()
+
+                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+                results = holistic.process(image_rgb)
+                positions = JointPositions(
+                    image=None, joint_pos=None, joint_pos2d=None, successful=False
+                )
+
+                if results:
+                    if results.pose_world_landmarks.landmark:
+                        positions.successful = True
+                        landmarks = results.pose_world_landmarks.landmark
+                        landmarks_2d = results.pose_landmarks.landmark
+                        positions.joint_pos = {
+                            "RIGHT_SHOULDER": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.RIGHT_SHOULDER]
+                            ),
+                            "RIGHT_WRIST": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST]
+                            ),
+                            "RIGHT_ELBOW": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.RIGHT_ELBOW]
+                            ),
+                            "LEFT_SHOULDER": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.LEFT_SHOULDER]
+                            ),
+                            "LEFT_WRIST": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.LEFT_WRIST]
+                            ),
+                            "LEFT_ELBOW": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.LEFT_ELBOW]
+                            ),
+                            "LEFT_HIP": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.LEFT_HIP]
+                            ),
+                            "RIGHT_HIP": landmark_to_dict(
+                                landmarks[mp_holistic.PoseLandmark.RIGHT_HIP]
+                            ),
+                        }
+                        positions.joint_pos2d = {
+                            "RIGHT_SHOULDER": landmarks_2d[
+                                mp_holistic.PoseLandmark.RIGHT_SHOULDER
+                            ],
+                            "RIGHT_WRIST": landmarks_2d[
+                                mp_holistic.PoseLandmark.RIGHT_WRIST
+                            ],
+                            "RIGHT_ELBOW": landmarks_2d[
+                                mp_holistic.PoseLandmark.RIGHT_ELBOW
+                            ],
+                            "LEFT_SHOULDER": landmarks_2d[
+                                mp_holistic.PoseLandmark.LEFT_SHOULDER
+                            ],
+                            "LEFT_WRIST": landmarks_2d[
+                                mp_holistic.PoseLandmark.LEFT_WRIST
+                            ],
+                            "LEFT_ELBOW": landmarks_2d[
+                                mp_holistic.PoseLandmark.LEFT_ELBOW
+                            ],
+                            "LEFT_HIP": landmarks_2d[mp_holistic.PoseLandmark.LEFT_HIP],
+                            "RIGHT_HIP": landmarks_2d[
+                                mp_holistic.PoseLandmark.RIGHT_HIP
+                            ],
+                        }
+
+                        pose_connections = [
+                            conn
+                            for conn in mp_holistic.POSE_CONNECTIONS
+                            if conn[0] > 10 and conn[1] > 10
+                        ]
+
+                        body_landmarks = None
+
+                        # Only draw body landmarks (indices 11 and above)
+                        if results.pose_landmarks:
+                            # Create a copy of pose_landmarks with only body landmarks
+
+                            body_landmarks = landmark_pb2.NormalizedLandmarkList()
+                            for i, landmark in enumerate(
+                                results.pose_landmarks.landmark
+                            ):
+                                if i >= 11:  # Skip face landmarks (0-10)
+                                    body_landmarks.landmark.add().CopyFrom(landmark)
+                                else:
+                                    # Add invisible dummy landmarks to maintain indexing
+                                    dummy = body_landmarks.landmark.add()
+                                    dummy.x = 0
+                                    dummy.y = 0
+                                    dummy.z = 0
+                                    dummy.visibility = 0
+
+                    mp_drawing.draw_landmarks(image, body_landmarks, pose_connections)
+                    positions.image = image
+
+                    ## START OF SHOULDER CALCULATIONS
+                    # get midpoint of hip
+                    left_hip = positions.joint_pos["LEFT_HIP"]
+                    right_hip = positions.joint_pos["RIGHT_HIP"]
+                    midpoint_hip = midpoint(left_hip, right_hip)
+
+                    left_shoulder = positions.joint_pos["LEFT_SHOULDER"]
+                    right_shoulder = positions.joint_pos["RIGHT_SHOULDER"]
+
+                    left_elbow = positions.joint_pos["LEFT_ELBOW"]
+                    right_elbow = positions.joint_pos["RIGHT_ELBOW"]
+
+                    right_wrist = positions.joint_pos["RIGHT_WRIST"]
+
+                    # click.echo(f"Left Hip {left_hip}")
+                    # click.echo(f"Right Hip {right_hip}")
+                    # click.echo(f"Midpoint Hip {midpoint_hip}")
+
+                    # create normal vector from both shoulders + middle hip
+                    body_plane_normal = normal_vector_of_plane_on_three_points(
+                        left_shoulder, right_shoulder, midpoint_hip
+                    )
+
+                    right_upper_arm_vector = vector_between_two_points(
+                        right_shoulder, right_elbow
+                    )
+                    right_vector = vector_between_two_points(
+                        left_shoulder, right_shoulder
+                    )
+
+                    down_vector = np.cross(body_plane_normal, right_vector)
+
+                    A_dot_n = np.dot(right_upper_arm_vector, body_plane_normal)
+                    A_dot_down = np.dot(right_upper_arm_vector, down_vector)
+                    A_dot_right = np.dot(right_upper_arm_vector, right_vector)
+
+                    shoulder_flexion = math.atan2(
+                        A_dot_n, math.sqrt(A_dot_right**2 + A_dot_down**2)
+                    )
+
+                    shoulder_abduction = math.atan2(A_dot_right, A_dot_down)
+
+                    right_shoulder_2d_pos = convert_landmark_2d_to_pixel_coordinates(
+                        700, 500, positions.joint_pos2d["RIGHT_SHOULDER"]
+                    )
+
+                    cv2.putText(
+                        image_rgb,
+                        f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES}",
+                        [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 20],
+                        cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                        1,
+                        [255, 255, 0],
+                        1,
+                    )
+
+                    cv2.putText(
+                        image_rgb,
+                        f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES}",
+                        [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 40],
+                        cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                        1,
+                        [255, 255, 0],
+                        1,
+                    )
+
+                    actual_x = [right_shoulder[0], right_elbow[0], right_wrist[0]]
+                    actual_z = [-right_shoulder[1], -right_elbow[1], -right_wrist[1]]
+                    actual_y = [right_shoulder[2], right_elbow[2], right_wrist[2]]
+                    ## END SHOULDER ROTATION STUFF
+
+                # cv2.imshow("Webcam Feed", image
+
+                ## MATPLOTLIB PLOTTING STUFF
+
+                # actual_x = [shoulder_pos[0], elbow_pos_actual[0], wrist_pos_actual[0]]
+                # actual_y = [shoulder_pos[1], elbow_pos_actual[1], wrist_pos_actual[1]]
+                # actual_z = [shoulder_pos[2], elbow_pos_actual[2], wrist_pos_actual[2]]
+
+                actual_arm_line.set_data(actual_x, actual_y)
+                actual_arm_line.set_3d_properties(actual_z)
+
+                # Update video display
+                if video_img is None:
+                    video_img = ax_video.imshow(image_rgb)
+                else:
+                    video_img.set_data(image_rgb)
+
+                plt.pause(0.001)
+
+                # Check for window close
+                if not plt.fignum_exists(fig.number):
+                    break
+
+                # if cv2.waitKey(1) & 0xFF == ord("q"):
+                #     break
+            except Exception as ex:
+                click.echo(ex)
+
+    cv2.destroyAllWindows()
+    cap.release()
