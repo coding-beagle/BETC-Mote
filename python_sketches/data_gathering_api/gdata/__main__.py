@@ -986,7 +986,7 @@ def process_webcam():
     ax_actual.set_title("Actual Joint Positions (MediaPipe)", fontsize=14)
 
     # Right: forward kinematics
-    ax_fk = fig.add_subplot(143, projection="3d")
+    ax_fk = fig.add_subplot(133, projection="3d")
     ax_fk.set_xlabel("X (m)")
     ax_fk.set_ylabel("Y (m)")
     ax_fk.set_zlabel("Z (m)")
@@ -1186,14 +1186,19 @@ def process_webcam():
                     )
 
                     # Calculate forward kinematics
-                    fk_shoulder, fk_elbow, fk_wrist = calculate_forward_kinematics(
-                        shoulder_flexion, shoulder_abduction, elbow_flexion
+                    fk_shoulder, fk_elbow, fk_wrist, fk_hand = (
+                        calculate_forward_kinematics(
+                            shoulder_flexion,
+                            shoulder_abduction,
+                            elbow_flexion,
+                            wrist_flexion,
+                        )
                     )
 
-                    # Prepare FK data for plotting
-                    fk_x = [fk_shoulder[0], fk_elbow[0], fk_wrist[0]]
-                    fk_z = [-fk_shoulder[1], -fk_elbow[1], -fk_wrist[1]]
-                    fk_y = [fk_shoulder[2], fk_elbow[2], fk_wrist[2]]
+                    # Prepare FK data for plotting (now includes hand)
+                    fk_x = [fk_shoulder[0], fk_elbow[0], fk_wrist[0], fk_hand[0]]
+                    fk_z = [-fk_shoulder[1], -fk_elbow[1], -fk_wrist[1], -fk_hand[1]]
+                    fk_y = [fk_shoulder[2], fk_elbow[2], fk_wrist[2], fk_hand[2]]
 
                     # Update FK plot
                     fk_arm_line.set_data(fk_x, fk_y)
