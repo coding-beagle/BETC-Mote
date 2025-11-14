@@ -816,17 +816,84 @@ def process_img(file_path, show):
     img = cv2.imread(file_path)
     img_copy = img.copy()
 
-    positions = return_all_relevant_joint_positions(img, show)
+    try:
+        positions = return_all_relevant_joint_positions(img, show)
+    except Exception as ex:
+        click.echo(ex)
 
     if show:
-        img_resized = cv2.resize(img_copy, [500, 700])
-        cv2.imshow("Found image", img_resized)
+        try:
+            img_resized = cv2.resize(img_copy, [500, 700])
+            cv2.imshow("Found image", img_resized)
 
-        resized_landmarks = cv2.resize(positions.image, [500, 700])
-        left_shoulder = convert_landmark_2d_to_pixel_coordinates(
-            500, 700, positions.joint_pos2d["LEFT_SHOULDER"]
-        )
-        cv2.circle(resized_landmarks, left_shoulder, 10, [255, 0, 255], 2)
-        cv2.imshow("Landmark Positions", resized_landmarks)
+            resized_landmarks = cv2.resize(positions.image, [500, 700])
 
-        cv2.waitKey(0)
+            # get midpoint of hip
+            left_hip = positions.joint_pos["LEFT_HIP"]
+            right_hip = positions.joint_pos["RIGHT_HIP"]
+            midpoint_hip = midpoint(left_hip, right_hip)
+
+            left_shoulder = positions.joint_pos["LEFT_SHOULDER"]
+            right_shoulder = positions.joint_pos["RIGHT_SHOULDER"]
+
+            left_elbow = positions.joint_pos["LEFT_ELBOW"]
+            right_elbow = positions.joint_pos["RIGHT_ELBOW"]
+
+            # click.echo(f"Left Hip {left_hip}")
+            # click.echo(f"Right Hip {right_hip}")
+            # click.echo(f"Midpoint Hip {midpoint_hip}")
+
+            # create normal vector from both shoulders + middle hip
+            body_plane_normal = normal_vector_of_plane_on_three_points(
+                left_shoulder, right_shoulder, midpoint_hip
+            )
+
+            right_upper_arm_vector = vector_between_two_points(
+                right_shoulder, right_elbow
+            )
+            right_vector = vector_between_two_points(left_shoulder, right_shoulder)
+
+            down_vector = np.cross(body_plane_normal, right_vector)
+
+            A_dot_n = np.dot(right_upper_arm_vector, body_plane_normal)
+            A_dot_down = np.dot(right_upper_arm_vector, down_vector)
+            A_dot_right = np.dot(right_upper_arm_vector, right_vector)
+
+            shoulder_flexion = math.atan2(
+                A_dot_n, math.sqrt(A_dot_right**2 + A_dot_down**2)
+            )
+
+            shoulder_abduction = math.atan2(A_dot_right, A_dot_down)
+
+            right_shoulder_2d_pos = convert_landmark_2d_to_pixel_coordinates(
+                700, 500, positions.joint_pos2d["RIGHT_SHOULDER"]
+            )
+
+            cv2.putText(
+                resized_landmarks,
+                f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES}",
+                [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 20],
+                cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                1,
+                [255, 255, 0],
+                1,
+            )
+
+            cv2.putText(
+                resized_landmarks,
+                f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES}",
+                [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 40],
+                cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                1,
+                [255, 255, 0],
+                1,
+            )
+
+            # click.echo(f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES}")
+            # click.echo(f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES}")
+
+            cv2.imshow("Landmark Positions", resized_landmarks)
+
+            cv2.waitKey(0)
+        except Exception as Ex:
+            click.echo(Ex)

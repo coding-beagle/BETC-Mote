@@ -44,6 +44,14 @@ def angle_between_three_points(a, b, c, degrees=False) -> float:
     return angle_between_vectors(vec_a, vec_b, degrees)
 
 
+def midpoint(a, b) -> np.ndarray:
+    output = []
+    for i in range(len(a)):
+        output.append((a[i] + b[i]) / 2)
+
+    return np.array(output)
+
+
 def normal_vector_of_plane_on_three_points(a, b, c, unit_vec=True) -> np.ndarray:
     vec_a = vector_between_two_points(a, b)
     vec_b = vector_between_two_points(a, c)

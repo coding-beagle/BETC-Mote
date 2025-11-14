@@ -14,6 +14,21 @@ class JointPositions:
     joint_pos2d: dict
 
 
+def convert_landmark_dict_to_vec(landmark) -> np.ndarray:
+    return np.array([landmark["x"], landmark["y"], landmark["z"]])
+
+
+def landmark_to_dict(landmark):
+    # print(landmark)
+    land_dict = {
+        "x": landmark.x,
+        "y": landmark.y,
+        "z": landmark.z,
+        "visibility": landmark.visibility,  # if it exists
+    }
+    return convert_landmark_dict_to_vec(land_dict)
+
+
 def return_all_relevant_joint_positions(
     image: np.ndarray, draw: bool = False
 ) -> JointPositions:
@@ -39,14 +54,30 @@ def return_all_relevant_joint_positions(
             landmarks = results.pose_world_landmarks.landmark
             landmarks_2d = results.pose_landmarks.landmark
             output.joint_pos = {
-                "RIGHT_SHOULDER": landmarks[mp_holistic.PoseLandmark.RIGHT_SHOULDER],
-                "RIGHT_WRIST": landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST],
-                "RIGHT_ELBOW": landmarks[mp_holistic.PoseLandmark.RIGHT_ELBOW],
-                "LEFT_SHOULDER": landmarks[mp_holistic.PoseLandmark.LEFT_SHOULDER],
-                "LEFT_WRIST": landmarks[mp_holistic.PoseLandmark.LEFT_WRIST],
-                "LEFT_ELBOW": landmarks[mp_holistic.PoseLandmark.LEFT_ELBOW],
-                "LEFT_HIP": landmarks[mp_holistic.PoseLandmark.LEFT_HIP],
-                "RIGHT_HIP": landmarks[mp_holistic.PoseLandmark.RIGHT_HIP],
+                "RIGHT_SHOULDER": landmark_to_dict(
+                    landmarks[mp_holistic.PoseLandmark.RIGHT_SHOULDER]
+                ),
+                "RIGHT_WRIST": landmark_to_dict(
+                    landmarks[mp_holistic.PoseLandmark.RIGHT_WRIST]
+                ),
+                "RIGHT_ELBOW": landmark_to_dict(
+                    landmarks[mp_holistic.PoseLandmark.RIGHT_ELBOW]
+                ),
+                "LEFT_SHOULDER": landmark_to_dict(
+                    landmarks[mp_holistic.PoseLandmark.LEFT_SHOULDER]
+                ),
+                "LEFT_WRIST": landmark_to_dict(
+                    landmarks[mp_holistic.PoseLandmark.LEFT_WRIST]
+                ),
+                "LEFT_ELBOW": landmark_to_dict(
+                    landmarks[mp_holistic.PoseLandmark.LEFT_ELBOW]
+                ),
+                "LEFT_HIP": landmark_to_dict(
+                    landmarks[mp_holistic.PoseLandmark.LEFT_HIP]
+                ),
+                "RIGHT_HIP": landmark_to_dict(
+                    landmarks[mp_holistic.PoseLandmark.RIGHT_HIP]
+                ),
             }
             output.joint_pos2d = {
                 "RIGHT_SHOULDER": landmarks_2d[mp_holistic.PoseLandmark.RIGHT_SHOULDER],
@@ -91,4 +122,4 @@ def return_all_relevant_joint_positions(
 
 def convert_landmark_2d_to_pixel_coordinates(image_height, image_width, in_landmark):
     # print(dict(in_dict))
-    return [in_landmark.y * image_height, in_landmark.x * image_width]
+    return [int(in_landmark.x * image_width), int(in_landmark.y * image_height)]
