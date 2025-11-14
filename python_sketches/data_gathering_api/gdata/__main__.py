@@ -903,6 +903,62 @@ def process_img(file_path, show):
             click.echo(Ex)
 
 
+def calculate_forward_kinematics(
+    shoulder_flexion,
+    shoulder_abduction,
+    elbow_flexion,
+    wrist_flexion,
+    upper_arm_length=0.3,
+    forearm_length=0.25,
+    hand_length=0.1,
+):
+    """
+    Calculate FK from shoulder, elbow, and wrist angles
+    Returns: shoulder_pos, elbow_pos, wrist_pos, hand_pos as arrays
+    """
+    # Shoulder is at origin
+    shoulder = np.array([0.0, 0.0, 0.0])
+
+    # Calculate elbow position from shoulder angles
+    # Using spherical coordinates
+    elbow_x = upper_arm_length * np.sin(shoulder_abduction) * np.cos(shoulder_flexion)
+    elbow_y = upper_arm_length * np.cos(shoulder_abduction) * np.cos(shoulder_flexion)
+    elbow_z = upper_arm_length * np.sin(shoulder_flexion)
+    elbow = shoulder + np.array([elbow_x, elbow_y, elbow_z])
+
+    # Upper arm direction vector
+    upper_arm_dir = (elbow - shoulder) / np.linalg.norm(elbow - shoulder)
+
+    # For elbow flexion, we need to bend the forearm
+    # The forearm rotates around an axis perpendicular to the upper arm
+    # For simplicity, assume it bends in a plane
+
+    # Calculate forearm direction after elbow flexion
+    # elbow_flexion of 0 = straight arm, π = fully bent
+    forearm_extension = forearm_length * np.cos(np.pi - elbow_flexion)
+    forearm_lateral = forearm_length * np.sin(np.pi - elbow_flexion)
+
+    # Create perpendicular vector for the bend direction
+    if abs(upper_arm_dir[2]) < 0.9:
+        perp = np.cross(upper_arm_dir, np.array([0, 0, 1]))
+    else:
+        perp = np.cross(upper_arm_dir, np.array([1, 0, 0]))
+    perp = perp / np.linalg.norm(perp)
+
+    wrist = elbow + upper_arm_dir * forearm_extension + perp * forearm_lateral
+
+    # Calculate hand position from wrist flexion
+    forearm_dir = (wrist - elbow) / np.linalg.norm(wrist - elbow)
+
+    hand_extension = hand_length * np.cos(np.pi - wrist_flexion)
+    hand_lateral = hand_length * np.sin(np.pi - wrist_flexion)
+
+    # Use same perpendicular for wrist bend
+    hand = wrist + forearm_dir * hand_extension + perp * hand_lateral
+
+    return shoulder, elbow, wrist, hand
+
+
 @cli.command()
 def process_webcam():
     import mediapipe as mp
@@ -929,15 +985,26 @@ def process_webcam():
     ax_actual.set_zlabel("Z (m)")
     ax_actual.set_title("Actual Joint Positions (MediaPipe)", fontsize=14)
 
+    # Right: forward kinematics
+    ax_fk = fig.add_subplot(143, projection="3d")
+    ax_fk.set_xlabel("X (m)")
+    ax_fk.set_ylabel("Y (m)")
+    ax_fk.set_zlabel("Z (m)")
+    ax_fk.set_title("Forward Kinematics", fontsize=14)
+
     angle_text = fig.text(0.5, 0.95, "", fontsize=12, ha="center", color="black")
 
-    for ax in [ax_actual]:
+    for ax in [ax_actual, ax_fk]:
         ax.set_xlim([-0.6, 0.6])
         ax.set_ylim([-0.6, 0.6])
         ax.set_zlim([0.0, 0.8])
 
     (actual_arm_line,) = ax_actual.plot(
         [], [], [], "b-", linewidth=3, marker="o", markersize=8, label="Arm"
+    )
+
+    (fk_arm_line,) = ax_fk.plot(
+        [], [], [], "r-", linewidth=3, marker="o", markersize=8, label="FK"
     )
 
     with mp_holistic.Holistic(
@@ -1104,17 +1171,6 @@ def process_webcam():
 
                     shoulder_abduction = math.atan2(A_dot_right, A_dot_down)
 
-                    right_shoulder_2d_pos = convert_landmark_2d_to_pixel_coordinates(
-                        height, width, positions.joint_pos2d["RIGHT_SHOULDER"]
-                    )
-
-                    right_elbow_2d_pos = convert_landmark_2d_to_pixel_coordinates(
-                        height, width, positions.joint_pos2d["RIGHT_ELBOW"]
-                    )
-                    right_wrist_2d_pos = convert_landmark_2d_to_pixel_coordinates(
-                        height, width, positions.joint_pos2d["RIGHT_WRIST"]
-                    )
-
                     elbow_flexion = angle_between_three_points(
                         right_shoulder, right_elbow, right_wrist
                     )
@@ -1129,45 +1185,71 @@ def process_webcam():
                         f"Wrist Flexion: {wrist_flexion * RADIAN_TO_DEGREES:.1f}°"
                     )
 
-                    cv2.putText(
-                        positions.image,
-                        f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES:.2f}",
-                        [right_shoulder_2d_pos[0] + 5, right_shoulder_2d_pos[1] + 5],
-                        cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                        0.5,
-                        [255, 0, 255],
-                        1,
+                    # Calculate forward kinematics
+                    fk_shoulder, fk_elbow, fk_wrist = calculate_forward_kinematics(
+                        shoulder_flexion, shoulder_abduction, elbow_flexion
                     )
 
-                    cv2.putText(
-                        positions.image,
-                        f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES:.2f}",
-                        [right_shoulder_2d_pos[0] + 5, right_shoulder_2d_pos[1] + 20],
-                        cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                        0.5,
-                        [255, 0, 255],
-                        1,
-                    )
+                    # Prepare FK data for plotting
+                    fk_x = [fk_shoulder[0], fk_elbow[0], fk_wrist[0]]
+                    fk_z = [-fk_shoulder[1], -fk_elbow[1], -fk_wrist[1]]
+                    fk_y = [fk_shoulder[2], fk_elbow[2], fk_wrist[2]]
 
-                    cv2.putText(
-                        positions.image,
-                        f"Elbow flexion = {elbow_flexion * RADIAN_TO_DEGREES:.2f}",
-                        [right_elbow_2d_pos[0], right_elbow_2d_pos[1]],
-                        cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                        0.5,
-                        [255, 0, 255],
-                        1,
-                    )
+                    # Update FK plot
+                    fk_arm_line.set_data(fk_x, fk_y)
+                    fk_arm_line.set_3d_properties(fk_z)
 
-                    cv2.putText(
-                        positions.image,
-                        f"Wrist Flexion = {wrist_flexion * RADIAN_TO_DEGREES:.2f}",
-                        [right_wrist_2d_pos[0], right_wrist_2d_pos[1]],
-                        cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                        0.5,
-                        [255, 0, 255],
-                        1,
-                    )
+                    # UNCOMMENT TO GET TEXT ON IMG
+
+                    # right_shoulder_2d_pos = convert_landmark_2d_to_pixel_coordinates(
+                    # height, width, positions.joint_pos2d["RIGHT_SHOULDER"]
+                    # )
+
+                    # right_elbow_2d_pos = convert_landmark_2d_to_pixel_coordinates(
+                    # height, width, positions.joint_pos2d["RIGHT_ELBOW"]
+                    # )
+                    # right_wrist_2d_pos = convert_landmark_2d_to_pixel_coordinates(
+                    # height, width, positions.joint_pos2d["RIGHT_WRIST"]
+                    # )
+                    # cv2.putText(
+                    #     positions.image,
+                    #     f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES:.2f}",
+                    #     [right_shoulder_2d_pos[0] + 5, right_shoulder_2d_pos[1] + 5],
+                    #     cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                    #     0.5,
+                    #     [255, 0, 255],
+                    #     1,
+                    # )
+
+                    # cv2.putText(
+                    #     positions.image,
+                    #     f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES:.2f}",
+                    #     [right_shoulder_2d_pos[0] + 5, right_shoulder_2d_pos[1] + 20],
+                    #     cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                    #     0.5,
+                    #     [255, 0, 255],
+                    #     1,
+                    # )
+
+                    # cv2.putText(
+                    #     positions.image,
+                    #     f"Elbow flexion = {elbow_flexion * RADIAN_TO_DEGREES:.2f}",
+                    #     [right_elbow_2d_pos[0], right_elbow_2d_pos[1]],
+                    #     cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                    #     0.5,
+                    #     [255, 0, 255],
+                    #     1,
+                    # )
+
+                    # cv2.putText(
+                    #     positions.image,
+                    #     f"Wrist Flexion = {wrist_flexion * RADIAN_TO_DEGREES:.2f}",
+                    #     [right_wrist_2d_pos[0], right_wrist_2d_pos[1]],
+                    #     cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                    #     0.5,
+                    #     [255, 0, 255],
+                    #     1,
+                    # )
 
                     actual_x = [
                         right_shoulder[0],
