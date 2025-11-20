@@ -1309,3 +1309,296 @@ def process_webcam():
 
     cv2.destroyAllWindows()
     cap.release()
+
+
+@cli.command()
+@click.option("-u", "upper_arm_length", default=0.5, help="Upper arm length (m)")
+@click.option("-f", "lower_arm_length", default=0.5, help="Forearm length (m)")
+@click.option("-t", "time_step", default=0.1, help="Time step (s)")
+@click.option("-s", "time_start", default=0.0, help="Time start (s)")
+@click.option("-e", "time_end", default=1.0, help="Time end (s)")
+@click.option(
+    "-i", "interp_type", default=0, help="Interpolation type, 0=linear, 1=cubic"
+)
+@click.option("-q1s", "q1s", default=0.0, help="Q1 Start Angle (degrees)")
+@click.option("-q1e", "q1e", default=0.0, help="Q1 End Angle (degrees)")
+@click.option("-q2s", "q2s", default=0.0, help="Q2 Start Angle (degrees)")
+@click.option("-q2e", "q2e", default=0.0, help="Q2 End Angle (degrees)")
+@click.option("-q3s", "q3s", default=0.0, help="Q3 Start Angle (degrees)")
+@click.option("-q3e", "q3e", default=0.0, help="Q3 End Angle (degrees)")
+@click.option("-q4s", "q4s", default=0.0, help="Q4 Start Angle (degrees)")
+@click.option("-q4e", "q4e", default=0.0, help="Q4 End Angle (degrees)")
+@click.option("-q5s", "q5s", default=0.0, help="Q5 Start Angle (degrees)")
+@click.option("-q5e", "q5e", default=0.0, help="Q5 End Angle (degrees)")
+@click.option("-q6s", "q6s", default=0.0, help="Q6 Start Angle (degrees)")
+@click.option("-q6e", "q6e", default=0.0, help="Q6 End Angle (degrees)")
+@click.option("-q7s", "q7s", default=0.0, help="Q7 Start Angle (degrees)")
+@click.option("-q7e", "q7e", default=0.0, help="Q7 End Angle (degrees)")
+@click.option("-n", "file_name", help="Output file name")
+def create_path(
+    upper_arm_length,
+    lower_arm_length,
+    time_step,
+    time_start,
+    time_end,
+    interp_type,
+    q1s,
+    q1e,
+    q2s,
+    q2e,
+    q3s,
+    q3e,
+    q4s,
+    q4e,
+    q5s,
+    q5e,
+    q6s,
+    q6e,
+    q7s,
+    q7e,
+    file_name,
+):
+
+    num_iterations = (time_end - time_start) / time_step
+
+    delta_q1 = ((q1e - q1s) * DEGREES_TO_RADIANS) / num_iterations
+    q1s_rad, q1e_rad = (q1s * DEGREES_TO_RADIANS, q1e * DEGREES_TO_RADIANS)
+
+    delta_q2 = ((q2e - q2s) * DEGREES_TO_RADIANS) / num_iterations
+    q2s_rad, q2e_rad = (q2s * DEGREES_TO_RADIANS, q2e * DEGREES_TO_RADIANS)
+
+    delta_q3 = ((q3e - q3s) * DEGREES_TO_RADIANS) / num_iterations
+    q3s_rad, q3e_rad = (q3s * DEGREES_TO_RADIANS, q3e * DEGREES_TO_RADIANS)
+
+    delta_q4 = ((q4e - q4s) * DEGREES_TO_RADIANS) / num_iterations
+    q4s_rad, q4e_rad = (q4s * DEGREES_TO_RADIANS, q4e * DEGREES_TO_RADIANS)
+
+    delta_q5 = ((q5e - q5s) * DEGREES_TO_RADIANS) / num_iterations
+    q5s_rad, q5e_rad = (q5s * DEGREES_TO_RADIANS, q5e * DEGREES_TO_RADIANS)
+
+    delta_q6 = ((q6e - q6s) * DEGREES_TO_RADIANS) / num_iterations
+    q6s_rad, q6e_rad = (q6s * DEGREES_TO_RADIANS, q6e * DEGREES_TO_RADIANS)
+
+    delta_q7 = ((q7e - q7s) * DEGREES_TO_RADIANS) / num_iterations
+    q7s_rad, q7e_rad = (q7s * DEGREES_TO_RADIANS, q7e * DEGREES_TO_RADIANS)
+
+    def create_dh_matrix(theta_n, alpha_n, r_n, d_n) -> np.ndarray:
+        sin_thetha_n = math.sin(theta_n)
+        cos_thetha_n = math.cos(theta_n)
+        sin_alpha_n = math.sin(alpha_n)
+        cos_alpha_n = math.cos(alpha_n)
+        row_1 = np.array(
+            [
+                cos_thetha_n,
+                -sin_thetha_n * cos_alpha_n,
+                sin_thetha_n * sin_alpha_n,
+                r_n * cos_thetha_n,
+            ]
+        )
+        row_2 = np.array(
+            [
+                sin_thetha_n,
+                cos_thetha_n * cos_alpha_n,
+                -cos_thetha_n * sin_alpha_n,
+                r_n * sin_thetha_n,
+            ]
+        )
+        row_3 = np.array([0, sin_alpha_n, cos_alpha_n, d_n])
+        row_4 = np.array([0, 0, 0, 1])
+
+        dh_matrix = np.array([row_1, row_2, row_3, row_4])
+
+        return dh_matrix
+
+    pi_over_2 = math.pi / 2
+
+    with open(file_name, "w", newline="") as csvfile:
+        field_names = [
+            "Time (s)",
+            "Shoulder x",
+            "Shoulder y",
+            "Shoulder z",
+            "Elbow x",
+            "Elbow y",
+            "Elbow z",
+            "Wrist x",
+            "Wrist y",
+            "Wrist z",
+        ]
+        writer = csv.DictWriter(csvfile, fieldnames=field_names)
+        writer.writeheader()
+
+        for i in np.arange(time_start, time_end, time_step):
+            row = {}
+            q1 = q1s_rad + delta_q1 * i
+            q2 = q2s_rad + delta_q2 * i
+            q3 = q3s_rad + delta_q3 * i
+            q4 = q4s_rad + delta_q4 * i
+            q5 = q5s_rad + delta_q5 * i
+            q6 = q6s_rad + delta_q6 * i
+            q7 = q7s_rad + delta_q7 * i
+
+            dh_1 = create_dh_matrix(pi_over_2 + q1, 0, 0, pi_over_2)
+            dh_2 = create_dh_matrix(3 * pi_over_2 + q2, 0, 0, pi_over_2)
+            dh_3 = create_dh_matrix(q3, upper_arm_length, 0, -pi_over_2)
+            dh_4 = create_dh_matrix(pi_over_2 + q4, 0, 0, pi_over_2)
+            dh_5 = create_dh_matrix(pi_over_2 + q5, lower_arm_length, 0, pi_over_2)
+            dh_6 = create_dh_matrix(pi_over_2 + q6, 0, 0, pi_over_2)
+            dh_7 = create_dh_matrix(pi_over_2 + q7, 0, 0, pi_over_2)
+
+            shoulder_pos = (0, 0, 0)
+
+            dh_to_elbow = dh_1 @ dh_2 @ dh_3 @ dh_4
+            elbow_pos = [dh_to_elbow[0][3], dh_to_elbow[1][3], dh_to_elbow[2][3]]
+
+            dh_to_wrist = dh_to_elbow @ dh_5 @ dh_6 @ dh_7
+            wrist_pos = [dh_to_wrist[0][3], dh_to_wrist[1][3], dh_to_wrist[2][3]]
+
+            row["Time (s)"] = i
+            row["Shoulder x"] = shoulder_pos[0]
+            row["Shoulder y"] = shoulder_pos[1]
+            row["Shoulder z"] = shoulder_pos[2]
+            row["Elbow x"] = elbow_pos[0]
+            row["Elbow y"] = elbow_pos[1]
+            row["Elbow z"] = elbow_pos[2]
+            row["Wrist x"] = wrist_pos[0]
+            row["Wrist y"] = wrist_pos[1]
+            row["Wrist z"] = wrist_pos[2]
+
+            writer.writerow(row)
+
+    click.echo(f"Successfully written csv to {file_name}")
+
+def plot_arm_joints(csv_file):
+    """
+    Plot arm joint positions from CSV file with interactive time slider.
+    
+    Parameters:
+    -----------
+    csv_file : str
+        Path to CSV file containing joint positions
+    """
+    # Read the CSV file
+    df = pd.read_csv(csv_file)
+    
+    # Get the time steps
+    times = df['Time (s)'].values
+    num_frames = len(times)
+    
+    # Extract joint positions
+    shoulder_x = df['Shoulder x'].values
+    shoulder_y = df['Shoulder y'].values
+    shoulder_z = df['Shoulder z'].values
+    
+    elbow_x = df['Elbow x'].values
+    elbow_y = df['Elbow y'].values
+    elbow_z = df['Elbow z'].values
+    
+    wrist_x = df['Wrist x'].values
+    wrist_y = df['Wrist y'].values
+    wrist_z = df['Wrist z'].values
+    
+    # Calculate bounds for consistent scaling
+    all_x = np.concatenate([shoulder_x, elbow_x, wrist_x])
+    all_y = np.concatenate([shoulder_y, elbow_y, wrist_z])
+    all_z = np.concatenate([shoulder_z, elbow_z, wrist_z])
+    
+    x_min, x_max = all_x.min(), all_x.max()
+    y_min, y_max = all_y.min(), all_y.max()
+    z_min, z_max = all_z.min(), all_z.max()
+    
+    # Add padding
+    padding = 0.1
+    x_range = x_max - x_min
+    y_range = y_max - y_min
+    z_range = z_max - z_min
+    
+    # Create figure and 3D axis
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Adjust position to make room for slider
+    plt.subplots_adjust(bottom=0.15)
+    
+    # Initialize the plot with first frame
+    def plot_frame(frame_idx):
+        ax.clear()
+        
+        # Get positions for this frame
+        shoulder_pos = [shoulder_x[frame_idx], shoulder_y[frame_idx], shoulder_z[frame_idx]]
+        elbow_pos = [elbow_x[frame_idx], elbow_y[frame_idx], elbow_z[frame_idx]]
+        wrist_pos = [wrist_x[frame_idx], wrist_y[frame_idx], wrist_z[frame_idx]]
+        
+        # Plot the arm segments
+        # Upper arm (shoulder to elbow)
+        ax.plot([shoulder_pos[0], elbow_pos[0]], 
+                [shoulder_pos[1], elbow_pos[1]], 
+                [shoulder_pos[2], elbow_pos[2]], 
+                'b-', linewidth=3, label='Upper Arm')
+        
+        # Forearm (elbow to wrist)
+        ax.plot([elbow_pos[0], wrist_pos[0]], 
+                [elbow_pos[1], wrist_pos[1]], 
+                [elbow_pos[2], wrist_pos[2]], 
+                'g-', linewidth=3, label='Forearm')
+        
+        # Plot the joints
+        ax.scatter(*shoulder_pos, c='red', s=100, marker='o', label='Shoulder', depthshade=True)
+        ax.scatter(*elbow_pos, c='orange', s=100, marker='o', label='Elbow', depthshade=True)
+        ax.scatter(*wrist_pos, c='purple', s=100, marker='o', label='Wrist', depthshade=True)
+        
+        # Plot trajectory traces (optional - shows path over time)
+        ax.plot(shoulder_x[:frame_idx+1], shoulder_y[:frame_idx+1], shoulder_z[:frame_idx+1], 
+                'r--', alpha=0.3, linewidth=1)
+        ax.plot(elbow_x[:frame_idx+1], elbow_y[:frame_idx+1], elbow_z[:frame_idx+1], 
+                'orange', alpha=0.3, linewidth=1, linestyle='--')
+        ax.plot(wrist_x[:frame_idx+1], wrist_y[:frame_idx+1], wrist_z[:frame_idx+1], 
+                'm--', alpha=0.3, linewidth=1)
+        
+        # Set consistent axis limits
+        ax.set_xlim([x_min - padding * x_range, x_max + padding * x_range])
+        ax.set_ylim([y_min - padding * y_range, y_max + padding * y_range])
+        ax.set_zlim([z_min - padding * z_range, z_max + padding * z_range])
+        
+        # Labels and title
+        ax.set_xlabel('X (m)', fontsize=10)
+        ax.set_ylabel('Y (m)', fontsize=10)
+        ax.set_zlabel('Z (m)', fontsize=10)
+        ax.set_title(f'Arm Joint Positions - Time: {times[frame_idx]:.3f}s (Frame {frame_idx+1}/{num_frames})', 
+                     fontsize=12, fontweight='bold')
+        
+        # Add legend
+        ax.legend(loc='upper right', fontsize=8)
+        
+        # Set viewing angle
+        ax.view_init(elev=20, azim=45)
+        
+        fig.canvas.draw_idle()
+    
+    # Create slider
+    ax_slider = plt.axes([0.15, 0.05, 0.7, 0.03])
+    slider = Slider(
+        ax=ax_slider,
+        label='Time Step',
+        valmin=0,
+        valmax=num_frames - 1,
+        valinit=0,
+        valstep=1
+    )
+    
+    # Update function for slider
+    def update(val):
+        frame_idx = int(slider.val)
+        plot_frame(frame_idx)
+    
+    slider.on_changed(update)
+    
+    # Plot initial frame
+    plot_frame(0)
+    
+    plt.show()
+    
+@cli.command()
+@click.option('-f', 'file_path', help="Path to csv file to plot")
+def plot_arm_csv(file_path):
+    

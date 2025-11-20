@@ -4,6 +4,7 @@ import numpy as np
 import math
 
 RADIAN_TO_DEGREES = 180 / (math.pi)
+DEGREES_TO_RADIANS = (math.pi) / 180
 
 
 def vector_between_two_points(a: np.ndarray, b: np.ndarray) -> np.ndarray:
