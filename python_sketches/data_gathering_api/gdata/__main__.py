@@ -1315,8 +1315,8 @@ def process_webcam():
 
 
 @cli.command()
-@click.option("-u", "upper_arm_length", default=0.5, help="Upper arm length (m)")
-@click.option("-f", "lower_arm_length", default=0.5, help="Forearm length (m)")
+@click.option("-u", "upper_arm_length", default=0.28, help="Upper arm length (m)")
+@click.option("-f", "lower_arm_length", default=0.25, help="Forearm length (m)")
 @click.option("-t", "time_step", default=0.1, help="Time step (s)")
 @click.option("-s", "time_start", default=0.0, help="Time start (s)")
 @click.option("-e", "time_end", default=1.0, help="Time end (s)")
@@ -1385,7 +1385,7 @@ def create_path(
     delta_q7 = ((q7e - q7s) * DEGREES_TO_RADIANS) / num_iterations
     q7s_rad, q7e_rad = (q7s * DEGREES_TO_RADIANS, q7e * DEGREES_TO_RADIANS)
 
-    def create_dh_matrix(theta_n, alpha_n, r_n, d_n) -> np.ndarray:
+    def create_dh_matrix(theta_n, alpha_n, d_n, r_n) -> np.ndarray:
         sin_thetha_n = math.sin(theta_n)
         cos_thetha_n = math.cos(theta_n)
         sin_alpha_n = math.sin(alpha_n)
@@ -1431,31 +1431,63 @@ def create_path(
         writer = csv.DictWriter(csvfile, fieldnames=field_names)
         writer.writeheader()
 
-        for i in np.arange(time_start, time_end, time_step):
+        for index, i in enumerate(
+            np.arange(time_start, time_end + time_step, time_step)
+        ):
             row = {}
-            q1 = q1s_rad + delta_q1 * i
-            q2 = q2s_rad + delta_q2 * i
-            q3 = q3s_rad + delta_q3 * i
-            q4 = q4s_rad + delta_q4 * i
-            q5 = q5s_rad + delta_q5 * i
-            q6 = q6s_rad + delta_q6 * i
-            q7 = q7s_rad + delta_q7 * i
+            q1 = q1s_rad + delta_q1 * index
+            q2 = q2s_rad + delta_q2 * index
+            q3 = q3s_rad + delta_q3 * index
+            q4 = q4s_rad + delta_q4 * index
+            q5 = q5s_rad + delta_q5 * index
+            q6 = q6s_rad + delta_q6 * index
+            q7 = q7s_rad + delta_q7 * index
 
-            dh_1 = create_dh_matrix(pi_over_2 + q1, 0, 0, pi_over_2)
-            dh_2 = create_dh_matrix(3 * pi_over_2 + q2, 0, 0, pi_over_2)
-            dh_3 = create_dh_matrix(q3, upper_arm_length, 0, -pi_over_2)
-            dh_4 = create_dh_matrix(pi_over_2 + q4, 0, 0, pi_over_2)
-            dh_5 = create_dh_matrix(pi_over_2 + q5, lower_arm_length, 0, pi_over_2)
-            dh_6 = create_dh_matrix(pi_over_2 + q6, 0, 0, pi_over_2)
-            dh_7 = create_dh_matrix(pi_over_2 + q7, 0, 0, pi_over_2)
+            # dh_1 = create_dh_matrix(pi_over_2 + q1, pi_over_2, 0, 0)
+            # dh_2 = create_dh_matrix(3 * pi_over_2 + q2, pi_over_2, 0, 0)
+            # dh_3 = create_dh_matrix(q3, -pi_over_2, upper_arm_length, 0)
+            # dh_4 = create_dh_matrix(pi_over_2 + q4, pi_over_2, 0, 0)
+            # dh_5 = create_dh_matrix(pi_over_2 + q5, pi_over_2, lower_arm_length, 0)
+            # dh_6 = create_dh_matrix(pi_over_2 + q6, pi_over_2, 0, 0)
+            # dh_7 = create_dh_matrix(pi_over_2 + q7, pi_over_2, 0, 0)
+
+            # dh_1 = create_dh_matrix(pi_over_2 + q1, pi_over_2, 0, 0)
+            # dh_2 = create_dh_matrix(pi_over_2 + q2, pi_over_2, 0, 0)
+            # dh_3 = create_dh_matrix(pi_over_2 + q3, 0, upper_arm_length, 0)
+            # dh_4 = create_dh_matrix(q4, -pi_over_2, 0, 0)
+            # dh_5 = create_dh_matrix(q5, pi_over_2, lower_arm_length, 0)
+            # dh_6 = create_dh_matrix(pi_over_2 + q6, pi_over_2, 0, 0)
+            # dh_7 = create_dh_matrix(pi_over_2 + q7, pi_over_2, 0, 0)
+
+            dh_1 = create_dh_matrix(q1, pi_over_2, 0, 0)  # Shoulder flexion/extension
+            dh_2 = create_dh_matrix(q2, pi_over_2, 0, 0)  # Shoulder abduction/adduction
+            dh_3 = create_dh_matrix(
+                q3, -pi_over_2, 0, upper_arm_length
+            )  # Shoulder rotation + upper arm
+            dh_4 = create_dh_matrix(q4, pi_over_2, 0, 0)  # Elbow flexion/extension
+            dh_5 = create_dh_matrix(
+                q5, -pi_over_2, 0, lower_arm_length
+            )  # Forearm rotation + lower arm
+            dh_6 = create_dh_matrix(q6, pi_over_2, 0, 0)  # Wrist flexion/extension
+            dh_7 = create_dh_matrix(q7, 0, 0, 0)  # Wrist radial/ulnar deviation
 
             shoulder_pos = (0, 0, 0)
 
-            dh_to_elbow = dh_1 @ dh_2 @ dh_3 @ dh_4
+            dh_to_elbow = dh_1 @ dh_2 @ dh_3
             elbow_pos = [dh_to_elbow[0][3], dh_to_elbow[1][3], dh_to_elbow[2][3]]
 
-            dh_to_wrist = dh_to_elbow @ dh_5 @ dh_6 @ dh_7
+            dh_to_wrist = dh_to_elbow @ dh_4 @ dh_5
             wrist_pos = [dh_to_wrist[0][3], dh_to_wrist[1][3], dh_to_wrist[2][3]]
+
+            upper_segment_length = np.linalg.norm(
+                np.array(elbow_pos) - np.array(shoulder_pos)
+            )
+            lower_segment_length = np.linalg.norm(
+                np.array(wrist_pos) - np.array(elbow_pos)
+            )
+            print(
+                f"Upper segment: {upper_segment_length}, Lower segment: {lower_segment_length}"
+            )
 
             row["Time (s)"] = i
             row["Shoulder x"] = shoulder_pos[0]
@@ -1526,6 +1558,14 @@ def plot_arm_joints(csv_file):
 
     # Initialize the plot with first frame
     def plot_frame(frame_idx):
+        # Store current view angles before clearing
+        if hasattr(ax, "elev"):  # Check if view has been set
+            current_elev = ax.elev
+            current_azim = ax.azim
+        else:
+            current_elev = 20
+            current_azim = 45
+
         ax.clear()
 
         # Get positions for this frame
@@ -1615,7 +1655,7 @@ def plot_arm_joints(csv_file):
         ax.legend(loc="upper right", fontsize=8)
 
         # Set viewing angle
-        ax.view_init(elev=20, azim=45)
+        ax.view_init(elev=current_elev, azim=current_azim)
 
         fig.canvas.draw_idle()
 
