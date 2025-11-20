@@ -5,6 +5,9 @@ import numpy as np
 from math import floor
 import mediapipe as mp
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+from mpl_toolkits.mplot3d import Axes3D
+import pandas as pd
 
 # from mpl_toolkits.mplot3d import Axes3D
 # from matplotlib.animation import FuncAnimation
@@ -1469,10 +1472,11 @@ def create_path(
 
     click.echo(f"Successfully written csv to {file_name}")
 
+
 def plot_arm_joints(csv_file):
     """
     Plot arm joint positions from CSV file with interactive time slider.
-    
+
     Parameters:
     -----------
     csv_file : str
@@ -1480,125 +1484,167 @@ def plot_arm_joints(csv_file):
     """
     # Read the CSV file
     df = pd.read_csv(csv_file)
-    
+
     # Get the time steps
-    times = df['Time (s)'].values
+    times = df["Time (s)"].values
     num_frames = len(times)
-    
+
     # Extract joint positions
-    shoulder_x = df['Shoulder x'].values
-    shoulder_y = df['Shoulder y'].values
-    shoulder_z = df['Shoulder z'].values
-    
-    elbow_x = df['Elbow x'].values
-    elbow_y = df['Elbow y'].values
-    elbow_z = df['Elbow z'].values
-    
-    wrist_x = df['Wrist x'].values
-    wrist_y = df['Wrist y'].values
-    wrist_z = df['Wrist z'].values
-    
+    shoulder_x = df["Shoulder x"].values
+    shoulder_y = df["Shoulder y"].values
+    shoulder_z = df["Shoulder z"].values
+
+    elbow_x = df["Elbow x"].values
+    elbow_y = df["Elbow y"].values
+    elbow_z = df["Elbow z"].values
+
+    wrist_x = df["Wrist x"].values
+    wrist_y = df["Wrist y"].values
+    wrist_z = df["Wrist z"].values
+
     # Calculate bounds for consistent scaling
     all_x = np.concatenate([shoulder_x, elbow_x, wrist_x])
     all_y = np.concatenate([shoulder_y, elbow_y, wrist_z])
     all_z = np.concatenate([shoulder_z, elbow_z, wrist_z])
-    
+
     x_min, x_max = all_x.min(), all_x.max()
     y_min, y_max = all_y.min(), all_y.max()
     z_min, z_max = all_z.min(), all_z.max()
-    
+
     # Add padding
     padding = 0.1
     x_range = x_max - x_min
     y_range = y_max - y_min
     z_range = z_max - z_min
-    
+
     # Create figure and 3D axis
     fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    
+    ax = fig.add_subplot(111, projection="3d")
+
     # Adjust position to make room for slider
     plt.subplots_adjust(bottom=0.15)
-    
+
     # Initialize the plot with first frame
     def plot_frame(frame_idx):
         ax.clear()
-        
+
         # Get positions for this frame
-        shoulder_pos = [shoulder_x[frame_idx], shoulder_y[frame_idx], shoulder_z[frame_idx]]
+        shoulder_pos = [
+            shoulder_x[frame_idx],
+            shoulder_y[frame_idx],
+            shoulder_z[frame_idx],
+        ]
         elbow_pos = [elbow_x[frame_idx], elbow_y[frame_idx], elbow_z[frame_idx]]
         wrist_pos = [wrist_x[frame_idx], wrist_y[frame_idx], wrist_z[frame_idx]]
-        
+
         # Plot the arm segments
         # Upper arm (shoulder to elbow)
-        ax.plot([shoulder_pos[0], elbow_pos[0]], 
-                [shoulder_pos[1], elbow_pos[1]], 
-                [shoulder_pos[2], elbow_pos[2]], 
-                'b-', linewidth=3, label='Upper Arm')
-        
+        ax.plot(
+            [shoulder_pos[0], elbow_pos[0]],
+            [shoulder_pos[1], elbow_pos[1]],
+            [shoulder_pos[2], elbow_pos[2]],
+            "b-",
+            linewidth=3,
+            label="Upper Arm",
+        )
+
         # Forearm (elbow to wrist)
-        ax.plot([elbow_pos[0], wrist_pos[0]], 
-                [elbow_pos[1], wrist_pos[1]], 
-                [elbow_pos[2], wrist_pos[2]], 
-                'g-', linewidth=3, label='Forearm')
-        
+        ax.plot(
+            [elbow_pos[0], wrist_pos[0]],
+            [elbow_pos[1], wrist_pos[1]],
+            [elbow_pos[2], wrist_pos[2]],
+            "g-",
+            linewidth=3,
+            label="Forearm",
+        )
+
         # Plot the joints
-        ax.scatter(*shoulder_pos, c='red', s=100, marker='o', label='Shoulder', depthshade=True)
-        ax.scatter(*elbow_pos, c='orange', s=100, marker='o', label='Elbow', depthshade=True)
-        ax.scatter(*wrist_pos, c='purple', s=100, marker='o', label='Wrist', depthshade=True)
-        
+        ax.scatter(
+            *shoulder_pos, c="red", s=100, marker="o", label="Shoulder", depthshade=True
+        )
+        ax.scatter(
+            *elbow_pos, c="orange", s=100, marker="o", label="Elbow", depthshade=True
+        )
+        ax.scatter(
+            *wrist_pos, c="purple", s=100, marker="o", label="Wrist", depthshade=True
+        )
+
         # Plot trajectory traces (optional - shows path over time)
-        ax.plot(shoulder_x[:frame_idx+1], shoulder_y[:frame_idx+1], shoulder_z[:frame_idx+1], 
-                'r--', alpha=0.3, linewidth=1)
-        ax.plot(elbow_x[:frame_idx+1], elbow_y[:frame_idx+1], elbow_z[:frame_idx+1], 
-                'orange', alpha=0.3, linewidth=1, linestyle='--')
-        ax.plot(wrist_x[:frame_idx+1], wrist_y[:frame_idx+1], wrist_z[:frame_idx+1], 
-                'm--', alpha=0.3, linewidth=1)
-        
+        ax.plot(
+            shoulder_x[: frame_idx + 1],
+            shoulder_y[: frame_idx + 1],
+            shoulder_z[: frame_idx + 1],
+            "r--",
+            alpha=0.3,
+            linewidth=1,
+        )
+        ax.plot(
+            elbow_x[: frame_idx + 1],
+            elbow_y[: frame_idx + 1],
+            elbow_z[: frame_idx + 1],
+            "orange",
+            alpha=0.3,
+            linewidth=1,
+            linestyle="--",
+        )
+        ax.plot(
+            wrist_x[: frame_idx + 1],
+            wrist_y[: frame_idx + 1],
+            wrist_z[: frame_idx + 1],
+            "m--",
+            alpha=0.3,
+            linewidth=1,
+        )
+
         # Set consistent axis limits
         ax.set_xlim([x_min - padding * x_range, x_max + padding * x_range])
         ax.set_ylim([y_min - padding * y_range, y_max + padding * y_range])
         ax.set_zlim([z_min - padding * z_range, z_max + padding * z_range])
-        
+
         # Labels and title
-        ax.set_xlabel('X (m)', fontsize=10)
-        ax.set_ylabel('Y (m)', fontsize=10)
-        ax.set_zlabel('Z (m)', fontsize=10)
-        ax.set_title(f'Arm Joint Positions - Time: {times[frame_idx]:.3f}s (Frame {frame_idx+1}/{num_frames})', 
-                     fontsize=12, fontweight='bold')
-        
+        ax.set_xlabel("X (m)", fontsize=10)
+        ax.set_ylabel("Y (m)", fontsize=10)
+        ax.set_zlabel("Z (m)", fontsize=10)
+        ax.set_title(
+            f"Arm Joint Positions - Time: {times[frame_idx]:.3f}s (Frame {frame_idx+1}/{num_frames})",
+            fontsize=12,
+            fontweight="bold",
+        )
+
         # Add legend
-        ax.legend(loc='upper right', fontsize=8)
-        
+        ax.legend(loc="upper right", fontsize=8)
+
         # Set viewing angle
         ax.view_init(elev=20, azim=45)
-        
+
         fig.canvas.draw_idle()
-    
+
     # Create slider
     ax_slider = plt.axes([0.15, 0.05, 0.7, 0.03])
     slider = Slider(
         ax=ax_slider,
-        label='Time Step',
+        label="Time Step",
         valmin=0,
         valmax=num_frames - 1,
         valinit=0,
-        valstep=1
+        valstep=1,
     )
-    
+
     # Update function for slider
     def update(val):
         frame_idx = int(slider.val)
         plot_frame(frame_idx)
-    
+
     slider.on_changed(update)
-    
+
     # Plot initial frame
     plot_frame(0)
-    
+
     plt.show()
-    
+
+
 @cli.command()
-@click.option('-f', 'file_path', help="Path to csv file to plot")
+@click.option("-f", "file_path", help="Path to csv file to plot")
 def plot_arm_csv(file_path):
-    
+    click.echo(f"Plotting {file_path}!")
+    plot_arm_joints(file_path)

@@ -7,7 +7,7 @@ setup(
     author="coding-beagle",
     author_email="nicholasp.teague@gmail.com",
     packages=["gdata"],
-    install_requires=["Click", "opencv-python", "numpy", "mediapipe"],
+    install_requires=["Click", "opencv-python", "numpy", "mediapipe", "pandas"],
     extras_require={
         "dev": ["pytest", "pytest-cov", "wheel"],
         "test": ["pytest", "pytest-cov"],
