@@ -1781,3 +1781,55 @@ def combine_csvs(file1, file2, output):
     result = add_csv_files(file1, file2)
     result.to_csv(output, index=False)
     click.echo(f"✓ Saved result to {output}")
+
+
+def append_csv_files(file1, file2):
+    """
+    Append movements from file2 to file1.
+    Takes the relative movement (deltas) from file2 and applies them
+    starting from the final position in file1.
+    """
+    df1 = pd.read_csv(file1)
+    df2 = pd.read_csv(file2)
+
+    # Get the final positions from file1
+    final_positions = df1.iloc[-1].copy()
+    final_time = final_positions["Time (s)"]
+
+    # Calculate deltas in file2 (movement relative to its start)
+    df2_start = df2.iloc[0].copy()
+
+    # Create result by concatenating
+    result = df1.copy()
+
+    # For each row in file2, apply the delta to file1's final position
+    for idx in range(1, len(df2)):  # Skip first row since it's the starting position
+        new_row = {}
+        new_row["Time (s)"] = final_time + df2.iloc[idx]["Time (s)"]
+
+        for col in df2.columns:
+            if col != "Time (s)":
+                # Delta from file2's start position
+                delta = df2.iloc[idx][col] - df2_start[col]
+                # Apply delta to file1's final position
+                new_row[col] = final_positions[col] + delta
+
+        result = pd.concat([result, pd.DataFrame([new_row])], ignore_index=True)
+
+    return result
+
+
+@cli.command()
+@click.argument("file1", type=click.Path(exists=True))
+@click.argument("file2", type=click.Path(exists=True))
+@click.argument("output", type=click.Path())
+def append(file1, file2, output):
+    """
+    Append movements from FILE2 to FILE1.
+    Takes the relative motion from FILE2 and continues from FILE1's end position.
+
+    Usage: python script.py append FILE1 FILE2 OUTPUT
+    """
+    result = append_csv_files(file1, file2)
+    result.to_csv(output, index=False)
+    click.echo(f"✓ Appended motion and saved to {output}")
