@@ -9,11 +9,13 @@ from matplotlib.widgets import Slider
 from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 
+
 # from mpl_toolkits.mplot3d import Axes3D
 # from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import CheckButtons
 import csv
 
+from .plotter import CSVPlotter
 from .utils.utils import *
 from .mediapipe_wrapper.mediapipe_utils import *
 
@@ -963,11 +965,22 @@ def calculate_forward_kinematics(
 
 
 @cli.command()
-def process_webcam():
+@click.option("-v", "video", help="Use video file instead of webcam")
+@click.option(
+    "-s", "save_path", help="Save recorded joint angles to this path as a csv file"
+)
+@click.option("-r", "rotate", is_flag=True, help="Rotate video counter clockwise")
+@click.option("-m", "mirror", is_flag=True, help="Mirror video")
+def process_four_joints(video, save_path, rotate, mirror):
     import mediapipe as mp
     from mediapipe.framework.formats import landmark_pb2
 
-    cap = cv2.VideoCapture(0 + cv2.CAP_DSHOW)
+    cap = None
+    if not (video):
+        cap = cv2.VideoCapture(0 + cv2.CAP_DSHOW)
+    else:
+        click.echo(f"Video provided! Analysing {video}")
+        cap = cv2.VideoCapture(video)
     video_img = None
 
     mp_holistic = mp.solutions.holistic
@@ -1010,14 +1023,30 @@ def process_webcam():
         [], [], [], "r-", linewidth=3, marker="o", markersize=8, label="FK"
     )
 
+    joint_angles_dict = {
+        "frame": [],
+        "shoulder_flexion": [],
+        "shoulder_abduction": [],
+        "elbow_flexion": [],
+        "wrist_flexion": [],
+    }
+
+    frame = 0
+
     with mp_holistic.Holistic(
         min_detection_confidence=0.5, min_tracking_confidence=0.5
     ) as holistic:
         while True:
             try:
-                _, image = cap.read()
+                success, image = cap.read()
+                if not (success):
+                    break
 
                 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                if rotate:
+                    image_rgb = cv2.rotate(image_rgb, cv2.ROTATE_90_CLOCKWISE)
+                if mirror:
+                    image_rgb = cv2.flip(image_rgb, 1)
 
                 results = holistic.process(image_rgb)
                 height, width = image_rgb.shape[:2]
@@ -1128,8 +1157,10 @@ def process_webcam():
                                     dummy.z = 0
                                     dummy.visibility = 0
 
-                    mp_drawing.draw_landmarks(image, body_landmarks, pose_connections)
-                    positions.image = image
+                    mp_drawing.draw_landmarks(
+                        image_rgb, body_landmarks, pose_connections
+                    )
+                    positions.image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
 
                     ## START OF SHOULDER CALCULATIONS
                     # get midpoint of hip
@@ -1179,6 +1210,21 @@ def process_webcam():
                     )
                     wrist_flexion = angle_between_three_points(
                         right_elbow, right_wrist, hand
+                    )
+
+                    joint_angles_dict["frame"].append(frame)
+                    frame += 1
+                    joint_angles_dict["shoulder_flexion"].append(
+                        shoulder_flexion * RADIAN_TO_DEGREES
+                    )
+                    joint_angles_dict["shoulder_abduction"].append(
+                        shoulder_abduction * RADIAN_TO_DEGREES
+                    )
+                    joint_angles_dict["elbow_flexion"].append(
+                        elbow_flexion * RADIAN_TO_DEGREES
+                    )
+                    joint_angles_dict["wrist_flexion"].append(
+                        wrist_flexion * RADIAN_TO_DEGREES
                     )
 
                     angle_text.set_text(
@@ -1309,6 +1355,31 @@ def process_webcam():
             except Exception as ex:
                 click.echo("Error!")
                 click.echo(ex)
+
+    if save_path:
+        with open(save_path, "w", newline="") as csvfile:
+            fieldnames = [
+                "frame",
+                "shoulder_flexion",
+                "shoulder_abduction",
+                "elbow_flexion",
+                "wrist_flexion",
+            ]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+
+            for frame in joint_angles_dict["frame"]:
+                row = {
+                    "frame": frame,
+                    "shoulder_flexion": joint_angles_dict["shoulder_flexion"][frame],
+                    "shoulder_abduction": joint_angles_dict["shoulder_abduction"][
+                        frame
+                    ],
+                    "elbow_flexion": joint_angles_dict["elbow_flexion"][frame],
+                    "wrist_flexion": joint_angles_dict["wrist_flexion"][frame],
+                }
+                writer.writerow(row)
 
     cv2.destroyAllWindows()
     cap.release()
@@ -1442,22 +1513,6 @@ def create_path(
             q5 = q5s_rad + delta_q5 * index
             q6 = q6s_rad + delta_q6 * index
             q7 = q7s_rad + delta_q7 * index
-
-            # dh_1 = create_dh_matrix(pi_over_2 + q1, pi_over_2, 0, 0)
-            # dh_2 = create_dh_matrix(3 * pi_over_2 + q2, pi_over_2, 0, 0)
-            # dh_3 = create_dh_matrix(q3, -pi_over_2, upper_arm_length, 0)
-            # dh_4 = create_dh_matrix(pi_over_2 + q4, pi_over_2, 0, 0)
-            # dh_5 = create_dh_matrix(pi_over_2 + q5, pi_over_2, lower_arm_length, 0)
-            # dh_6 = create_dh_matrix(pi_over_2 + q6, pi_over_2, 0, 0)
-            # dh_7 = create_dh_matrix(pi_over_2 + q7, pi_over_2, 0, 0)
-
-            # dh_1 = create_dh_matrix(pi_over_2 + q1, pi_over_2, 0, 0)
-            # dh_2 = create_dh_matrix(pi_over_2 + q2, pi_over_2, 0, 0)
-            # dh_3 = create_dh_matrix(pi_over_2 + q3, 0, upper_arm_length, 0)
-            # dh_4 = create_dh_matrix(q4, -pi_over_2, 0, 0)
-            # dh_5 = create_dh_matrix(q5, pi_over_2, lower_arm_length, 0)
-            # dh_6 = create_dh_matrix(pi_over_2 + q6, pi_over_2, 0, 0)
-            # dh_7 = create_dh_matrix(pi_over_2 + q7, pi_over_2, 0, 0)
 
             dh_1 = create_dh_matrix(q1, pi_over_2, 0, 0)  # Shoulder flexion/extension
             dh_2 = create_dh_matrix(q2, pi_over_2, 0, 0)  # Shoulder abduction/adduction
@@ -1688,3 +1743,9 @@ def plot_arm_joints(csv_file):
 def plot_arm_csv(file_path):
     click.echo(f"Plotting {file_path}!")
     plot_arm_joints(file_path)
+
+
+@cli.command()
+def plot():
+    plotter = CSVPlotter()
+    plotter.run()
