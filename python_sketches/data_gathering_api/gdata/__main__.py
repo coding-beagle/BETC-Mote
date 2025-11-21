@@ -1749,3 +1749,35 @@ def plot_arm_csv(file_path):
 def plot():
     plotter = CSVPlotter()
     plotter.run()
+
+
+def add_csv_files(file1, file2):
+    """Element-wise addition of CSV files (excluding Time column)."""
+    df1 = pd.read_csv(file1)
+    df2 = pd.read_csv(file2)
+
+    # Create result dataframe starting with Time column
+    result = pd.DataFrame()
+    result["Time (s)"] = df1["Time (s)"]
+
+    # Add all other columns element-wise
+    for col in df1.columns:
+        if col != "Time (s)":
+            result[col] = df1[col] + df2[col]
+
+    return result
+
+
+@cli.command()
+@click.argument("file1", type=click.Path(exists=True))
+@click.argument("file2", type=click.Path(exists=True))
+@click.argument("output", type=click.Path())
+def combine_csvs(file1, file2, output):
+    """
+    Element-wise add two CSV files (excluding Time column).
+
+    Usage: python script.py FILE1 FILE2 OUTPUT
+    """
+    result = add_csv_files(file1, file2)
+    result.to_csv(output, index=False)
+    click.echo(f"✓ Saved result to {output}")
