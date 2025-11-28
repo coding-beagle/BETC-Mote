@@ -1197,6 +1197,7 @@ def process_four_joints(video, save_path, joint_positions, rotate, mirror):
 
                     joint_coordinates_dict["HipL"].append(left_hip)
                     joint_coordinates_dict["HipR"].append(right_hip)
+                    joint_coordinates_dict["ShoulderL"].append(left_shoulder)
                     joint_coordinates_dict["Shoulder"].append(right_shoulder)
                     joint_coordinates_dict["Elbow"].append(right_elbow)
                     joint_coordinates_dict["Wrist"].append(right_wrist)
@@ -1425,6 +1426,7 @@ def process_four_joints(video, save_path, joint_positions, rotate, mirror):
                 "Pinky",
                 "HipL",
                 "HipR",
+                "ShoulderL",
             ]
 
             for joint in joint_names:
@@ -1458,6 +1460,9 @@ def process_four_joints(video, save_path, joint_positions, rotate, mirror):
                     "Thumb x": joint_coordinates_dict["Thumb"][frame][0],
                     "Thumb y": joint_coordinates_dict["Thumb"][frame][1],
                     "Thumb z": joint_coordinates_dict["Thumb"][frame][2],
+                    "ShoulderL x": joint_coordinates_dict["ShoulderL"][frame][0],
+                    "ShoulderL y": joint_coordinates_dict["ShoulderL"][frame][1],
+                    "ShoulderL z": joint_coordinates_dict["ShoulderL"][frame][2],
                     "HipL x": joint_coordinates_dict["HipL"][frame][0],
                     "HipL y": joint_coordinates_dict["HipL"][frame][1],
                     "HipL z": joint_coordinates_dict["HipL"][frame][2],
@@ -1925,8 +1930,35 @@ def append(file1, file2, output):
     click.echo(f"✓ Appended motion and saved to {output}")
 
 
+def calc_wrist_flex(elbow_pos, wrist_pos, hand_pos):
+    return angle_between_three_points(elbow_pos, wrist_pos, hand_pos)
+
+
 def calc_elbow_flex(shoulder_pos, elbow_pos, wrist_pos):
-    
+    return angle_between_three_points(shoulder_pos, elbow_pos, wrist_pos)
+
+
+def calc_shoulder(left_shoulder, right_shoulder, hip_left, hip_right, elbow):
+    midpoint_hip = midpoint(hip_left, hip_right)
+    body_plane_normal = normal_vector_of_plane_on_three_points(
+        left_shoulder, right_shoulder, midpoint_hip
+    )
+
+    right_upper_arm_vector = vector_between_two_points(right_shoulder, elbow)
+    right_vector = vector_between_two_points(left_shoulder, right_shoulder)
+
+    down_vector = np.cross(body_plane_normal, right_vector)
+
+    A_dot_n = np.dot(right_upper_arm_vector, body_plane_normal)
+    A_dot_down = np.dot(right_upper_arm_vector, down_vector)
+    A_dot_right = np.dot(right_upper_arm_vector, right_vector)
+
+    shoulder_flexion = math.atan2(A_dot_n, math.sqrt(A_dot_right**2 + A_dot_down**2))
+
+    shoulder_abduction = math.atan2(A_dot_right, A_dot_down)
+
+    return [shoulder_flexion, shoulder_abduction]
+
 
 def calc_joint_angles_from_data_dict(in_data):
     output = {
@@ -1938,11 +1970,32 @@ def calc_joint_angles_from_data_dict(in_data):
     }
 
     for frame in in_data:
-        output['frame'].append(frame)
+        output["frame"].append(frame["frame"])
+
+        hip_left = frame["HipL"]
+        hip_right = frame["HipR"]
+        hand = frame["Index"]
+        elbow = frame["Elbow"]
+        wrist = frame["Wrist"]
+        shoulder = frame["Shoulder"]
+        left_shoulder = frame["ShoulderL"]
+
+        output["elbow_flexion"].append(calc_elbow_flex(shoulder, elbow, wrist) * RADIAN_TO_DEGREES)
+        output["wrist_flexion"].append(calc_wrist_flex(elbow, wrist, hand) * RADIAN_TO_DEGREES)
+        shoulder_flex, shoulder_abduct = calc_shoulder(
+            left_shoulder, shoulder, hip_left, hip_right, elbow
+        )
+        output["shoulder_flexion"].append(shoulder_flex * RADIAN_TO_DEGREES)
+        output["shoulder_abduction"].append(shoulder_abduct * RADIAN_TO_DEGREES)
+
+    click.echo(output["elbow_flexion"][:5])
+    return output
+
 
 @cli.command()
 @click.argument("file1", type=click.Path(exists=True))
-def calc_and_plot(file1):
+@click.argument("file2")
+def calc_joints_write(file1, file2):
     data = []
 
     with open(file1, "r") as f:
@@ -1961,6 +2014,7 @@ def calc_and_plot(file1):
                 "Pinky",
                 "HipL",
                 "HipR",
+                "ShoulderL",
             ]
 
             # For each body part, create an array of [x, y, z]
@@ -1985,4 +2039,21 @@ def calc_and_plot(file1):
 
             data.append(frame_data)
 
-    click.echo(data)
+    joint_angles = calc_joint_angles_from_data_dict(data)
+
+    with open(file2, "w") as outfile:
+        writer = csv.writer(outfile, lineterminator='\n')
+        writer.writerow(
+            ["frame", "shoulder_flex", "shoulder_abduct", "elbow_flex", "wrist_flex"]
+        )
+        for index, num in enumerate(joint_angles["frame"]):
+            if(index == 0):
+                click.echo(num)
+            row = [
+                joint_angles["frame"][num],
+                joint_angles["shoulder_flexion"][num],
+                joint_angles["shoulder_abduction"][num],
+                joint_angles["elbow_flexion"][num],
+                joint_angles["wrist_flexion"][num],
+            ]
+            writer.writerow(row)
