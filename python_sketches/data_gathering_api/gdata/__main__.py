@@ -969,9 +969,14 @@ def calculate_forward_kinematics(
 @click.option(
     "-s", "save_path", help="Save recorded joint angles to this path as a csv file"
 )
+@click.option(
+    "-j",
+    "joint_positions",
+    help="Save recorded joint positions to a csv with this path",
+)
 @click.option("-r", "rotate", is_flag=True, help="Rotate video counter clockwise")
 @click.option("-m", "mirror", is_flag=True, help="Mirror video")
-def process_four_joints(video, save_path, rotate, mirror):
+def process_four_joints(video, save_path, joint_positions, rotate, mirror):
     import mediapipe as mp
     from mediapipe.framework.formats import landmark_pb2
 
@@ -1023,12 +1028,25 @@ def process_four_joints(video, save_path, rotate, mirror):
         [], [], [], "r-", linewidth=3, marker="o", markersize=8, label="FK"
     )
 
-    joint_angles_dict = {
+    joint_positions_dict = {
         "frame": [],
         "shoulder_flexion": [],
         "shoulder_abduction": [],
         "elbow_flexion": [],
         "wrist_flexion": [],
+    }
+
+    joint_coordinates_dict = {
+        "frame": [],
+        "Shoulder": [],
+        "Elbow": [],
+        "Wrist": [],
+        "Index": [],
+        "Thumb": [],
+        "Pinky": [],
+        "HipL": [],
+        "HipR": [],
+        "ShoulderL": [],
     }
 
     frame = 0
@@ -1177,6 +1195,19 @@ def process_four_joints(video, save_path, rotate, mirror):
                     right_wrist = positions.joint_pos["RIGHT_WRIST"]
                     hand = positions.joint_pos["RIGHT_INDEX"]
 
+                    joint_coordinates_dict["HipL"].append(left_hip)
+                    joint_coordinates_dict["HipR"].append(right_hip)
+                    joint_coordinates_dict["Shoulder"].append(right_shoulder)
+                    joint_coordinates_dict["Elbow"].append(right_elbow)
+                    joint_coordinates_dict["Wrist"].append(right_wrist)
+                    joint_coordinates_dict["Index"].append(hand)
+                    joint_coordinates_dict["Thumb"].append(
+                        positions.joint_pos["RIGHT_THUMB"]
+                    )
+                    joint_coordinates_dict["Pinky"].append(
+                        positions.joint_pos["RIGHT_PINKY"]
+                    )
+
                     # click.echo(f"Left Hip {left_hip}")
                     # click.echo(f"Right Hip {right_hip}")
                     # click.echo(f"Midpoint Hip {midpoint_hip}")
@@ -1212,18 +1243,19 @@ def process_four_joints(video, save_path, rotate, mirror):
                         right_elbow, right_wrist, hand
                     )
 
-                    joint_angles_dict["frame"].append(frame)
+                    joint_coordinates_dict["frame"].append(frame)
+                    joint_positions_dict["frame"].append(frame)
                     frame += 1
-                    joint_angles_dict["shoulder_flexion"].append(
+                    joint_positions_dict["shoulder_flexion"].append(
                         shoulder_flexion * RADIAN_TO_DEGREES
                     )
-                    joint_angles_dict["shoulder_abduction"].append(
+                    joint_positions_dict["shoulder_abduction"].append(
                         shoulder_abduction * RADIAN_TO_DEGREES
                     )
-                    joint_angles_dict["elbow_flexion"].append(
+                    joint_positions_dict["elbow_flexion"].append(
                         elbow_flexion * RADIAN_TO_DEGREES
                     )
-                    joint_angles_dict["wrist_flexion"].append(
+                    joint_positions_dict["wrist_flexion"].append(
                         wrist_flexion * RADIAN_TO_DEGREES
                     )
 
@@ -1369,16 +1401,71 @@ def process_four_joints(video, save_path, rotate, mirror):
 
             writer.writeheader()
 
-            for frame in joint_angles_dict["frame"]:
+            for frame in joint_positions_dict["frame"]:
                 row = {
                     "frame": frame,
-                    "shoulder_flexion": joint_angles_dict["shoulder_flexion"][frame],
-                    "shoulder_abduction": joint_angles_dict["shoulder_abduction"][
+                    "shoulder_flexion": joint_positions_dict["shoulder_flexion"][frame],
+                    "shoulder_abduction": joint_positions_dict["shoulder_abduction"][
                         frame
                     ],
-                    "elbow_flexion": joint_angles_dict["elbow_flexion"][frame],
-                    "wrist_flexion": joint_angles_dict["wrist_flexion"][frame],
+                    "elbow_flexion": joint_positions_dict["elbow_flexion"][frame],
+                    "wrist_flexion": joint_positions_dict["wrist_flexion"][frame],
                 }
+                writer.writerow(row)
+
+    if joint_positions:
+        with open(joint_positions, "w", newline="") as csvfile:
+            fieldnames = ["frame"]
+            joint_names = [
+                "Shoulder",
+                "Elbow",
+                "Wrist",
+                "Index",
+                "Thumb",
+                "Pinky",
+                "HipL",
+                "HipR",
+            ]
+
+            for joint in joint_names:
+                for coord in ["x", "y", "z"]:
+                    fieldnames.append(f"{joint} {coord}")
+
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+
+            for frame in joint_coordinates_dict["frame"]:
+                # click.echo(f"Processing frame: {frame}")
+                # click.echo(joint_coordinates_dict)
+                row = {
+                    "frame": frame,
+                    "Shoulder x": joint_coordinates_dict["Shoulder"][frame][0],
+                    "Shoulder y": joint_coordinates_dict["Shoulder"][frame][1],
+                    "Shoulder z": joint_coordinates_dict["Shoulder"][frame][2],
+                    "Elbow x": joint_coordinates_dict["Elbow"][frame][0],
+                    "Elbow y": joint_coordinates_dict["Elbow"][frame][1],
+                    "Elbow z": joint_coordinates_dict["Elbow"][frame][2],
+                    "Wrist x": joint_coordinates_dict["Wrist"][frame][0],
+                    "Wrist y": joint_coordinates_dict["Wrist"][frame][1],
+                    "Wrist z": joint_coordinates_dict["Wrist"][frame][2],
+                    "Index x": joint_coordinates_dict["Index"][frame][0],
+                    "Index y": joint_coordinates_dict["Index"][frame][1],
+                    "Index z": joint_coordinates_dict["Index"][frame][2],
+                    "Pinky x": joint_coordinates_dict["Pinky"][frame][0],
+                    "Pinky y": joint_coordinates_dict["Pinky"][frame][1],
+                    "Pinky z": joint_coordinates_dict["Pinky"][frame][2],
+                    "Thumb x": joint_coordinates_dict["Thumb"][frame][0],
+                    "Thumb y": joint_coordinates_dict["Thumb"][frame][1],
+                    "Thumb z": joint_coordinates_dict["Thumb"][frame][2],
+                    "HipL x": joint_coordinates_dict["HipL"][frame][0],
+                    "HipL y": joint_coordinates_dict["HipL"][frame][1],
+                    "HipL z": joint_coordinates_dict["HipL"][frame][2],
+                    "HipR x": joint_coordinates_dict["HipR"][frame][0],
+                    "HipR y": joint_coordinates_dict["HipR"][frame][1],
+                    "HipR z": joint_coordinates_dict["HipR"][frame][2],
+                }
+                # click.echo(row)
                 writer.writerow(row)
 
     cv2.destroyAllWindows()
@@ -1514,12 +1601,14 @@ def create_path(
             q6 = q6s_rad + delta_q6 * index
             q7 = q7s_rad + delta_q7 * index
 
-            dh_1 = create_dh_matrix(q1, pi_over_2, 0, 0)  # Shoulder flexion/extension
-            dh_2 = create_dh_matrix(q2, pi_over_2, 0, 0)  # Shoulder abduction/adduction
+            dh_1 = create_dh_matrix(q1, pi_over_2, 0, 0)  # Shoulder abduction/adduction
+            dh_2 = create_dh_matrix(q2, pi_over_2, 0, 0)  # Shoulder flexion/extension
             dh_3 = create_dh_matrix(
                 q3, -pi_over_2, 0, upper_arm_length
             )  # Shoulder rotation + upper arm
-            dh_4 = create_dh_matrix(q4, pi_over_2, 0, 0)  # Elbow flexion/extension
+            dh_4 = create_dh_matrix(
+                (180 * DEGREES_TO_RADIANS) - q4, pi_over_2, 0, 0
+            )  # Elbow flexion/extension
             dh_5 = create_dh_matrix(
                 q5, -pi_over_2, 0, lower_arm_length
             )  # Forearm rotation + lower arm
@@ -1560,7 +1649,7 @@ def create_path(
     click.echo(f"Successfully written csv to {file_name}")
 
 
-def plot_arm_joints(csv_file):
+def plot_arm_joints(csv_file, x_axis_name="Time (s)"):
     """
     Plot arm joint positions from CSV file with interactive time slider.
 
@@ -1573,7 +1662,7 @@ def plot_arm_joints(csv_file):
     df = pd.read_csv(csv_file)
 
     # Get the time steps
-    times = df["Time (s)"].values
+    times = df[x_axis_name].values
     num_frames = len(times)
 
     # Extract joint positions
@@ -1740,9 +1829,10 @@ def plot_arm_joints(csv_file):
 
 @cli.command()
 @click.option("-f", "file_path", help="Path to csv file to plot")
-def plot_arm_csv(file_path):
+@click.option("-i", "index_name", help="Column name for the x axis variable in the csv")
+def plot_arm_csv(file_path, index_name):
     click.echo(f"Plotting {file_path}!")
-    plot_arm_joints(file_path)
+    plot_arm_joints(file_path, index_name)
 
 
 @cli.command()
@@ -1833,3 +1923,66 @@ def append(file1, file2, output):
     result = append_csv_files(file1, file2)
     result.to_csv(output, index=False)
     click.echo(f"✓ Appended motion and saved to {output}")
+
+
+def calc_elbow_flex(shoulder_pos, elbow_pos, wrist_pos):
+    
+
+def calc_joint_angles_from_data_dict(in_data):
+    output = {
+        "frame": [],
+        "shoulder_flexion": [],
+        "shoulder_abduction": [],
+        "elbow_flexion": [],
+        "wrist_flexion": [],
+    }
+
+    for frame in in_data:
+        output['frame'].append(frame)
+
+@cli.command()
+@click.argument("file1", type=click.Path(exists=True))
+def calc_and_plot(file1):
+    data = []
+
+    with open(file1, "r") as f:
+        reader = csv.DictReader(f)
+
+        for row in reader:
+            frame_data = {"frame": int(row["frame"])}
+
+            # Define body parts (without x/y/z suffixes)
+            body_parts = [
+                "Shoulder",
+                "Elbow",
+                "Wrist",
+                "Index",
+                "Thumb",
+                "Pinky",
+                "HipL",
+                "HipR",
+            ]
+
+            # For each body part, create an array of [x, y, z]
+            for part in body_parts:
+                x_key = f"{part} x"
+                y_key = f"{part} y"
+                z_key = f"{part} z"
+
+                # Handle potential whitespace in column names
+                x_key_alt = f"__{part} x"
+                y_key_alt = f"__{part} y"
+                z_key_alt = f"__{part} z"
+
+                # Try to get values, handling both with and without __ prefix
+                x = row.get(x_key) or row.get(x_key_alt)
+                y = row.get(y_key) or row.get(y_key_alt)
+                z = row.get(z_key) or row.get(z_key_alt)
+
+                # Convert to float and create array
+                if x and y and z:
+                    frame_data[part] = [float(x), float(y), float(z)]
+
+            data.append(frame_data)
+
+    click.echo(data)
