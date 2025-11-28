@@ -1613,9 +1613,7 @@ def create_path(
             dh_3 = create_dh_matrix(
                 q3, -pi_over_2, 0, upper_arm_length
             )  # Shoulder rotation + upper arm
-            dh_4 = create_dh_matrix(
-                (180 * DEGREES_TO_RADIANS) - q4, pi_over_2, 0, 0
-            )  # Elbow flexion/extension
+            dh_4 = create_dh_matrix(q4, pi_over_2, 0, 0)  # Elbow flexion/extension
             dh_5 = create_dh_matrix(
                 q5, -pi_over_2, 0, lower_arm_length
             )  # Forearm rotation + lower arm
@@ -2182,54 +2180,88 @@ def plot_comparison(result_df: pd.DataFrame, joint_column: str):
     """
     try:
         import matplotlib.pyplot as plt
-        
+
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
-        
+
         # Plot original
-        ax1.plot(result_df['frame'], result_df[f'{joint_column}_original'], 
-                label='Original', linewidth=2, color='blue')
-        ax1.set_ylabel('Angle (degrees)')
-        ax1.set_title(f'Original {joint_column} Motion')
+        ax1.plot(
+            result_df["frame"],
+            result_df[f"{joint_column}_original"],
+            label="Original",
+            linewidth=2,
+            color="blue",
+        )
+        ax1.set_ylabel("Angle (degrees)")
+        ax1.set_title(f"Original {joint_column} Motion")
         ax1.legend()
         ax1.grid(True, alpha=0.3)
-        
+
         # Plot transformed
-        ax2.plot(result_df['frame'], result_df[f'{joint_column}_transformed'], 
-                label='Transformed', linewidth=2, color='orange')
-        ax2.set_ylabel('Angle (degrees)')
-        ax2.set_title(f'Transformed {joint_column} Motion')
+        ax2.plot(
+            result_df["frame"],
+            result_df[f"{joint_column}_transformed"],
+            label="Transformed",
+            linewidth=2,
+            color="orange",
+        )
+        ax2.set_ylabel("Angle (degrees)")
+        ax2.set_title(f"Transformed {joint_column} Motion")
         ax2.legend()
         ax2.grid(True, alpha=0.3)
-        
+
         # Plot difference
-        difference = result_df[f'{joint_column}_transformed'] - result_df[f'{joint_column}_original']
-        ax3.plot(result_df['frame'], difference, 
-                label='Difference (Transformed - Original)', linewidth=2, color='red')
-        ax3.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-        ax3.fill_between(result_df['frame'], 0, difference, alpha=0.3, color='red')
-        ax3.set_xlabel('Frame')
-        ax3.set_ylabel('Angle Difference (degrees)')
-        ax3.set_title('Difference Between Transformed and Original')
+        difference = (
+            result_df[f"{joint_column}_transformed"]
+            - result_df[f"{joint_column}_original"]
+        )
+        ax3.plot(
+            result_df["frame"],
+            difference,
+            label="Difference (Transformed - Original)",
+            linewidth=2,
+            color="red",
+        )
+        ax3.axhline(y=0, color="black", linestyle="--", linewidth=1, alpha=0.5)
+        ax3.fill_between(result_df["frame"], 0, difference, alpha=0.3, color="red")
+        ax3.set_xlabel("Frame")
+        ax3.set_ylabel("Angle Difference (degrees)")
+        ax3.set_title("Difference Between Transformed and Original")
         ax3.legend()
         ax3.grid(True, alpha=0.3)
-        
+
         # Color-code motion phases on all plots
         for ax in [ax1, ax2, ax3]:
-            endpoint1_frames = result_df[result_df['motion_phase'] == 'endpoint1']['frame']
-            endpoint2_frames = result_df[result_df['motion_phase'] == 'endpoint2']['frame']
-            
+            endpoint1_frames = result_df[result_df["motion_phase"] == "endpoint1"][
+                "frame"
+            ]
+            endpoint2_frames = result_df[result_df["motion_phase"] == "endpoint2"][
+                "frame"
+            ]
+
             if len(endpoint1_frames) > 0:
-                ax.axvspan(endpoint1_frames.iloc[0], endpoint1_frames.iloc[-1], 
-                          alpha=0.1, color='green', label='Endpoint 1')
+                ax.axvspan(
+                    endpoint1_frames.iloc[0],
+                    endpoint1_frames.iloc[-1],
+                    alpha=0.1,
+                    color="green",
+                    label="Endpoint 1",
+                )
             if len(endpoint2_frames) > 0:
-                ax.axvspan(endpoint2_frames.iloc[0], endpoint2_frames.iloc[-1], 
-                          alpha=0.1, color='red', label='Endpoint 2')
-        
+                ax.axvspan(
+                    endpoint2_frames.iloc[0],
+                    endpoint2_frames.iloc[-1],
+                    alpha=0.1,
+                    color="red",
+                    label="Endpoint 2",
+                )
+
         plt.tight_layout()
         plt.show()
-        
+
     except ImportError:
         print("matplotlib not available for plotting")
+
+
 @cli.command()
 @click.argument("csv_path", type=click.Path(exists=True))
 @click.argument("joint_column")
