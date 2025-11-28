@@ -2116,10 +2116,15 @@ def transform_motion_pattern(
     original_endpoint2: float,
     new_endpoint1: float,
     new_endpoint2: float,
+    scale_factor: float = 1.0,
 ) -> np.ndarray:
     """
     Transform the motion pattern to new endpoints while preserving the movement characteristics.
-    Scales towards new endpoints and clips if values exceed them.
+
+    Parameters:
+    -----------
+    scale_factor : float
+        Controls the aggressiveness of scaling (1.0 = match original range, >1.0 = more aggressive, <1.0 = less aggressive)
     """
 
     transformed = np.zeros_like(original_data)
@@ -2130,19 +2135,33 @@ def transform_motion_pattern(
     # Movement phase: scale and shift to match new endpoints
     movement_data = original_data[endpoint1_idx : endpoint2_idx + 1]
 
-    # Normalize the movement to 0-1 range based on original endpoints
-    original_range = original_endpoint2 - original_endpoint1
-    if abs(original_range) > 1e-6:
-        normalized_movement = (movement_data - original_endpoint1) / original_range
+    # Use the actual range of the movement data for more conservative scaling
+    actual_min = np.min(movement_data)
+    actual_max = np.max(movement_data)
+    actual_range = actual_max - actual_min
+
+    if abs(actual_range) > 1e-6:
+        # Normalize based on actual data range (0 to 1)
+        normalized_movement = (movement_data - actual_min) / actual_range
+
+        # Apply scale factor
+        # Center around 0.5, then scale, then shift back
+        centered = normalized_movement - 0.5
+        scaled_centered = centered * scale_factor
+        normalized_movement = scaled_centered + 0.5
+
+        # Scale to new range
+        new_range = new_endpoint2 - new_endpoint1
+        transformed[endpoint1_idx : endpoint2_idx + 1] = (
+            new_endpoint1 + normalized_movement * new_range
+        )
     else:
         # If no movement in original, create linear interpolation
         normalized_movement = np.linspace(0, 1, len(movement_data))
-
-    # Scale to new range
-    new_range = new_endpoint2 - new_endpoint1
-    transformed[endpoint1_idx : endpoint2_idx + 1] = (
-        new_endpoint1 + normalized_movement * new_range
-    )
+        new_range = new_endpoint2 - new_endpoint1
+        transformed[endpoint1_idx : endpoint2_idx + 1] = (
+            new_endpoint1 + normalized_movement * new_range
+        )
 
     # Clip to stay within endpoints
     min_endpoint = min(new_endpoint1, new_endpoint2)
@@ -2159,84 +2178,93 @@ def transform_motion_pattern(
 
 def plot_comparison(result_df: pd.DataFrame, joint_column: str):
     """
-    Optional: Plot the original and transformed motion patterns for visualization.
-    Requires matplotlib.
+    Plot the original and transformed motion patterns with difference visualization.
     """
     try:
         import matplotlib.pyplot as plt
-
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
-
+        
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+        
         # Plot original
-        ax1.plot(
-            result_df["frame"],
-            result_df[f"{joint_column}_original"],
-            label="Original",
-            linewidth=2,
-        )
-        ax1.set_ylabel("Angle (degrees)")
-        ax1.set_title(f"Original {joint_column} Motion")
+        ax1.plot(result_df['frame'], result_df[f'{joint_column}_original'], 
+                label='Original', linewidth=2, color='blue')
+        ax1.set_ylabel('Angle (degrees)')
+        ax1.set_title(f'Original {joint_column} Motion')
         ax1.legend()
         ax1.grid(True, alpha=0.3)
-
+        
         # Plot transformed
-        ax2.plot(
-            result_df["frame"],
-            result_df[f"{joint_column}_transformed"],
-            label="Transformed",
-            linewidth=2,
-            color="orange",
-        )
-        ax2.set_xlabel("Frame")
-        ax2.set_ylabel("Angle (degrees)")
-        ax2.set_title(f"Transformed {joint_column} Motion")
+        ax2.plot(result_df['frame'], result_df[f'{joint_column}_transformed'], 
+                label='Transformed', linewidth=2, color='orange')
+        ax2.set_ylabel('Angle (degrees)')
+        ax2.set_title(f'Transformed {joint_column} Motion')
         ax2.legend()
         ax2.grid(True, alpha=0.3)
-
-        # Color-code motion phases
-        for ax in [ax1, ax2]:
-            endpoint1_frames = result_df[result_df["motion_phase"] == "endpoint1"][
-                "frame"
-            ]
-            endpoint2_frames = result_df[result_df["motion_phase"] == "endpoint2"][
-                "frame"
-            ]
-
+        
+        # Plot difference
+        difference = result_df[f'{joint_column}_transformed'] - result_df[f'{joint_column}_original']
+        ax3.plot(result_df['frame'], difference, 
+                label='Difference (Transformed - Original)', linewidth=2, color='red')
+        ax3.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+        ax3.fill_between(result_df['frame'], 0, difference, alpha=0.3, color='red')
+        ax3.set_xlabel('Frame')
+        ax3.set_ylabel('Angle Difference (degrees)')
+        ax3.set_title('Difference Between Transformed and Original')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        # Color-code motion phases on all plots
+        for ax in [ax1, ax2, ax3]:
+            endpoint1_frames = result_df[result_df['motion_phase'] == 'endpoint1']['frame']
+            endpoint2_frames = result_df[result_df['motion_phase'] == 'endpoint2']['frame']
+            
             if len(endpoint1_frames) > 0:
-                ax.axvspan(
-                    endpoint1_frames.iloc[0],
-                    endpoint1_frames.iloc[-1],
-                    alpha=0.2,
-                    color="green",
-                    label="Endpoint 1",
-                )
+                ax.axvspan(endpoint1_frames.iloc[0], endpoint1_frames.iloc[-1], 
+                          alpha=0.1, color='green', label='Endpoint 1')
             if len(endpoint2_frames) > 0:
-                ax.axvspan(
-                    endpoint2_frames.iloc[0],
-                    endpoint2_frames.iloc[-1],
-                    alpha=0.2,
-                    color="red",
-                    label="Endpoint 2",
-                )
-
+                ax.axvspan(endpoint2_frames.iloc[0], endpoint2_frames.iloc[-1], 
+                          alpha=0.1, color='red', label='Endpoint 2')
+        
         plt.tight_layout()
         plt.show()
-
+        
     except ImportError:
         print("matplotlib not available for plotting")
-
-
 @cli.command()
 @click.argument("csv_path", type=click.Path(exists=True))
 @click.argument("joint_column")
-@click.argument("endpoint1")
-@click.argument("endpoint2")
+@click.argument("endpoint1", type=float)
+@click.argument("endpoint2", type=float)
+@click.option(
+    "--start-frame",
+    type=int,
+    default=None,
+    help="Starting frame to analyze (inclusive)",
+)
+@click.option(
+    "--end-frame", type=int, default=None, help="Ending frame to analyze (inclusive)"
+)
+@click.option(
+    "--smoothing-window",
+    type=int,
+    default=5,
+    help="Window size for detecting endpoints",
+)
+@click.option(
+    "--scale-factor",
+    type=float,
+    default=1.0,
+    help="Scaling aggressiveness (1.0=normal, <1.0=gentler, >1.0=more aggressive)",
+)
 def joint_analysis(
     csv_path: str,
     joint_column: str,
     endpoint1: float,
     endpoint2: float,
-    smoothing_window: int = 5,
+    start_frame: int,
+    end_frame: int,
+    smoothing_window: int,
+    scale_factor: float,
 ):
     """
     Analyze joint angle trends from CSV and create similar motion pattern with new endpoints.
@@ -2247,23 +2275,19 @@ def joint_analysis(
         Path to the CSV file containing joint angle data
     joint_column : str
         Name of the joint angle column to analyze (e.g., 'shoulder_flex', 'elbow_flex')
-    new_endpoint1 : float
+    endpoint1 : float
         Desired value for the first endpoint (starting position)
-    new_endpoint2 : float
+    endpoint2 : float
         Desired value for the second endpoint (ending position)
+    start_frame : int, optional
+        Starting frame to analyze (if None, uses first frame)
+    end_frame : int, optional
+        Ending frame to analyze (if None, uses last frame)
     smoothing_window : int
         Window size for detecting endpoints (larger = more stable detection)
-
-    Returns:
-    --------
-    pd.DataFrame
-        DataFrame with original data and new transformed motion pattern
     """
-
     # Read the CSV file
     click.echo(f"Reading {csv_path}!")
-
-    # Read the CSV file and ensure numeric conversion
     df = pd.read_csv(csv_path, header=0)
 
     # Convert all columns except 'frame' to numeric, handling any errors
@@ -2275,6 +2299,23 @@ def joint_analysis(
         raise ValueError(
             f"Column '{joint_column}' not found in CSV. Available columns: {df.columns.tolist()}"
         )
+
+    # Filter data based on frame range
+    if start_frame is not None:
+        df = df[df["frame"] >= start_frame]
+    if end_frame is not None:
+        df = df[df["frame"] <= end_frame]
+
+    # Reset index after filtering
+    df = df.reset_index(drop=True)
+
+    if len(df) == 0:
+        click.echo("Error: No data in specified frame range!")
+        return
+
+    click.echo(
+        f"Analyzing frames {df['frame'].iloc[0]} to {df['frame'].iloc[-1]} ({len(df)} frames)"
+    )
 
     # Extract the joint angle data as float array
     original_data = df[joint_column].astype(float).values
@@ -2289,7 +2330,13 @@ def joint_analysis(
     original_endpoint1 = float(original_data[endpoint1_idx])
     original_endpoint2 = float(original_data[endpoint2_idx])
 
-    # Create the transformed motion pattern
+    click.echo(
+        f"Detected endpoint 1 at frame {frames[endpoint1_idx]}: {original_endpoint1:.2f}"
+    )
+    click.echo(
+        f"Detected endpoint 2 at frame {frames[endpoint2_idx]}: {original_endpoint2:.2f}"
+    )
+
     try:
         transformed_data = transform_motion_pattern(
             original_data,
@@ -2297,11 +2344,13 @@ def joint_analysis(
             endpoint2_idx,
             original_endpoint1,
             original_endpoint2,
-            float(endpoint1),
-            float(endpoint2),
+            endpoint1,
+            endpoint2,
+            scale_factor,
         )
     except Exception as ex:
-        click.echo(ex)
+        click.echo(f"Error in transformation: {ex}")
+        return
 
     # Create output dataframe
     result_df = df.copy()
@@ -2316,4 +2365,10 @@ def joint_analysis(
         for i in range(len(original_data))
     ]
 
-    plot_comparison(result_df, "elbow_flex")
+    # Save results
+    output_path = csv_path.replace(".csv", "_transformed.csv")
+    result_df.to_csv(output_path, index=False)
+    click.echo(f"Saved results to {output_path}")
+
+    # Plot comparison
+    plot_comparison(result_df, joint_column)
