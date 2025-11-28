@@ -9,6 +9,8 @@ from matplotlib.widgets import Slider
 from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 
+from typing import Tuple, List
+
 
 # from mpl_toolkits.mplot3d import Axes3D
 # from matplotlib.animation import FuncAnimation
@@ -1980,8 +1982,12 @@ def calc_joint_angles_from_data_dict(in_data):
         shoulder = frame["Shoulder"]
         left_shoulder = frame["ShoulderL"]
 
-        output["elbow_flexion"].append(calc_elbow_flex(shoulder, elbow, wrist) * RADIAN_TO_DEGREES)
-        output["wrist_flexion"].append(calc_wrist_flex(elbow, wrist, hand) * RADIAN_TO_DEGREES)
+        output["elbow_flexion"].append(
+            calc_elbow_flex(shoulder, elbow, wrist) * RADIAN_TO_DEGREES
+        )
+        output["wrist_flexion"].append(
+            calc_wrist_flex(elbow, wrist, hand) * RADIAN_TO_DEGREES
+        )
         shoulder_flex, shoulder_abduct = calc_shoulder(
             left_shoulder, shoulder, hip_left, hip_right, elbow
         )
@@ -2042,12 +2048,12 @@ def calc_joints_write(file1, file2):
     joint_angles = calc_joint_angles_from_data_dict(data)
 
     with open(file2, "w") as outfile:
-        writer = csv.writer(outfile, lineterminator='\n')
+        writer = csv.writer(outfile, lineterminator="\n")
         writer.writerow(
             ["frame", "shoulder_flex", "shoulder_abduct", "elbow_flex", "wrist_flex"]
         )
         for index, num in enumerate(joint_angles["frame"]):
-            if(index == 0):
+            if index == 0:
                 click.echo(num)
             row = [
                 joint_angles["frame"][num],
@@ -2057,3 +2063,257 @@ def calc_joints_write(file1, file2):
                 joint_angles["wrist_flexion"][num],
             ]
             writer.writerow(row)
+
+
+def detect_motion_phases(
+    data: np.ndarray, window: int = 5
+) -> Tuple[int, int, np.ndarray]:
+    """
+    Detect the two endpoints and movement phase in the data.
+
+    Returns:
+    --------
+    endpoint1_idx : int
+        Index where first endpoint ends and movement begins
+    endpoint2_idx : int
+        Index where movement ends and second endpoint begins
+    movement_phase : np.ndarray
+        Boolean array indicating movement phase
+    """
+
+    # Calculate rolling velocity (rate of change)
+    velocity = np.abs(np.diff(data, prepend=data[0]))
+    smoothed_velocity = np.convolve(velocity, np.ones(window) / window, mode="same")
+
+    # Threshold for detecting movement (adaptive based on data)
+    velocity_threshold = np.percentile(smoothed_velocity, 75) * 0.3
+
+    # Find where significant movement occurs
+    is_moving = smoothed_velocity > velocity_threshold
+
+    # Find the first sustained movement start (endpoint1 end)
+    endpoint1_idx = 0
+    for i in range(len(is_moving) - window):
+        if np.sum(is_moving[i : i + window]) >= window * 0.7:
+            endpoint1_idx = i
+            break
+
+    # Find the last sustained movement end (endpoint2 start)
+    endpoint2_idx = len(data) - 1
+    for i in range(len(is_moving) - 1, window, -1):
+        if np.sum(is_moving[i - window : i]) >= window * 0.7:
+            endpoint2_idx = i
+            break
+
+    return endpoint1_idx, endpoint2_idx, is_moving
+
+
+def transform_motion_pattern(
+    original_data: np.ndarray,
+    endpoint1_idx: int,
+    endpoint2_idx: int,
+    original_endpoint1: float,
+    original_endpoint2: float,
+    new_endpoint1: float,
+    new_endpoint2: float,
+) -> np.ndarray:
+    """
+    Transform the motion pattern to new endpoints while preserving the movement characteristics.
+    Scales towards new endpoints and clips if values exceed them.
+    """
+
+    transformed = np.zeros_like(original_data)
+
+    # Endpoint 1 phase: constant value
+    transformed[: endpoint1_idx + 1] = new_endpoint1
+
+    # Movement phase: scale and shift to match new endpoints
+    movement_data = original_data[endpoint1_idx : endpoint2_idx + 1]
+
+    # Normalize the movement to 0-1 range based on original endpoints
+    original_range = original_endpoint2 - original_endpoint1
+    if abs(original_range) > 1e-6:
+        normalized_movement = (movement_data - original_endpoint1) / original_range
+    else:
+        # If no movement in original, create linear interpolation
+        normalized_movement = np.linspace(0, 1, len(movement_data))
+
+    # Scale to new range
+    new_range = new_endpoint2 - new_endpoint1
+    transformed[endpoint1_idx : endpoint2_idx + 1] = (
+        new_endpoint1 + normalized_movement * new_range
+    )
+
+    # Clip to stay within endpoints
+    min_endpoint = min(new_endpoint1, new_endpoint2)
+    max_endpoint = max(new_endpoint1, new_endpoint2)
+    transformed[endpoint1_idx : endpoint2_idx + 1] = np.clip(
+        transformed[endpoint1_idx : endpoint2_idx + 1], min_endpoint, max_endpoint
+    )
+
+    # Endpoint 2 phase: constant value
+    transformed[endpoint2_idx + 1 :] = new_endpoint2
+
+    return transformed
+
+
+def plot_comparison(result_df: pd.DataFrame, joint_column: str):
+    """
+    Optional: Plot the original and transformed motion patterns for visualization.
+    Requires matplotlib.
+    """
+    try:
+        import matplotlib.pyplot as plt
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+
+        # Plot original
+        ax1.plot(
+            result_df["frame"],
+            result_df[f"{joint_column}_original"],
+            label="Original",
+            linewidth=2,
+        )
+        ax1.set_ylabel("Angle (degrees)")
+        ax1.set_title(f"Original {joint_column} Motion")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Plot transformed
+        ax2.plot(
+            result_df["frame"],
+            result_df[f"{joint_column}_transformed"],
+            label="Transformed",
+            linewidth=2,
+            color="orange",
+        )
+        ax2.set_xlabel("Frame")
+        ax2.set_ylabel("Angle (degrees)")
+        ax2.set_title(f"Transformed {joint_column} Motion")
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        # Color-code motion phases
+        for ax in [ax1, ax2]:
+            endpoint1_frames = result_df[result_df["motion_phase"] == "endpoint1"][
+                "frame"
+            ]
+            endpoint2_frames = result_df[result_df["motion_phase"] == "endpoint2"][
+                "frame"
+            ]
+
+            if len(endpoint1_frames) > 0:
+                ax.axvspan(
+                    endpoint1_frames.iloc[0],
+                    endpoint1_frames.iloc[-1],
+                    alpha=0.2,
+                    color="green",
+                    label="Endpoint 1",
+                )
+            if len(endpoint2_frames) > 0:
+                ax.axvspan(
+                    endpoint2_frames.iloc[0],
+                    endpoint2_frames.iloc[-1],
+                    alpha=0.2,
+                    color="red",
+                    label="Endpoint 2",
+                )
+
+        plt.tight_layout()
+        plt.show()
+
+    except ImportError:
+        print("matplotlib not available for plotting")
+
+
+@cli.command()
+@click.argument("csv_path", type=click.Path(exists=True))
+@click.argument("joint_column")
+@click.argument("endpoint1")
+@click.argument("endpoint2")
+def joint_analysis(
+    csv_path: str,
+    joint_column: str,
+    endpoint1: float,
+    endpoint2: float,
+    smoothing_window: int = 5,
+):
+    """
+    Analyze joint angle trends from CSV and create similar motion pattern with new endpoints.
+
+    Parameters:
+    -----------
+    csv_path : str
+        Path to the CSV file containing joint angle data
+    joint_column : str
+        Name of the joint angle column to analyze (e.g., 'shoulder_flex', 'elbow_flex')
+    new_endpoint1 : float
+        Desired value for the first endpoint (starting position)
+    new_endpoint2 : float
+        Desired value for the second endpoint (ending position)
+    smoothing_window : int
+        Window size for detecting endpoints (larger = more stable detection)
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with original data and new transformed motion pattern
+    """
+
+    # Read the CSV file
+    click.echo(f"Reading {csv_path}!")
+
+    # Read the CSV file and ensure numeric conversion
+    df = pd.read_csv(csv_path, header=0)
+
+    # Convert all columns except 'frame' to numeric, handling any errors
+    for col in df.columns:
+        if col != "frame":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if joint_column not in df.columns:
+        raise ValueError(
+            f"Column '{joint_column}' not found in CSV. Available columns: {df.columns.tolist()}"
+        )
+
+    # Extract the joint angle data as float array
+    original_data = df[joint_column].astype(float).values
+    frames = df["frame"].values
+
+    # Detect endpoints and movement phases
+    endpoint1_idx, endpoint2_idx, movement_phase = detect_motion_phases(
+        original_data, smoothing_window
+    )
+
+    # Extract the original endpoints
+    original_endpoint1 = float(original_data[endpoint1_idx])
+    original_endpoint2 = float(original_data[endpoint2_idx])
+
+    # Create the transformed motion pattern
+    try:
+        transformed_data = transform_motion_pattern(
+            original_data,
+            endpoint1_idx,
+            endpoint2_idx,
+            original_endpoint1,
+            original_endpoint2,
+            float(endpoint1),
+            float(endpoint2),
+        )
+    except Exception as ex:
+        click.echo(ex)
+
+    # Create output dataframe
+    result_df = df.copy()
+    result_df[f"{joint_column}_original"] = original_data
+    result_df[f"{joint_column}_transformed"] = transformed_data
+    result_df["motion_phase"] = [
+        (
+            "endpoint1"
+            if i <= endpoint1_idx
+            else "movement" if i < endpoint2_idx else "endpoint2"
+        )
+        for i in range(len(original_data))
+    ]
+
+    plot_comparison(result_df, "elbow_flex")
