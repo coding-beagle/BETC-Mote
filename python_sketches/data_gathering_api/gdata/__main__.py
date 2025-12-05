@@ -206,14 +206,16 @@ def process_one_video(video_path, out_csv_path, draw=False):
                             image, body_landmarks, pose_connections
                         )
 
+                        # cv2.imshow("Image drawn", image)
+
                     # Extract positions and angles
                     if results.pose_landmarks:
                         landmarks = results.pose_world_landmarks.landmark
 
                         # # Calculate body reference frame
-                        hip_center, forward_vec, up_vec, right_vec = (
-                            calculate_body_reference_frame(landmarks, mp_holistic)
-                        )
+                        # hip_center, forward_vec, up_vec, right_vec = (
+                        #     calculate_body_reference_frame(landmarks, mp_holistic)
+                        # )
 
                         # # Get specific joint positions
                         # left_shoulder = landmarks[
@@ -240,11 +242,11 @@ def process_one_video(video_path, out_csv_path, draw=False):
                         # )
 
                         # Calculate forearm orientation relative to body
-                        forearm_orientation = (
-                            calculate_limb_orientation_relative_to_body(
-                                left_elbow, left_wrist, forward_vec, up_vec, right_vec
-                            )
-                        )
+                        # forearm_orientation = (
+                        #     calculate_limb_orientation_relative_to_body(
+                        #         left_elbow, left_wrist, forward_vec, up_vec, right_vec
+                        #     )
+                        # )
 
                         # Print results
                         # print(f"Left Elbow Flexion: {left_elbow_angle:.2f}°")
@@ -263,24 +265,24 @@ def process_one_video(video_path, out_csv_path, draw=False):
                                 mp_holistic.PoseLandmark.RIGHT_SHOULDER
                             ]
                             # Display on image
-                            h, w, _ = image.shape
-                            cv2.putText(
-                                image,
-                                f"Flex: {forearm_orientation['flexion_extension']:.1f}",
-                                (
-                                    int(left_elbow_2d.x * w),
-                                    int(left_elbow_2d.y * h) - 20,
-                                ),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                2,
-                                (255, 255, 0),
-                                2,
-                            )
+                            # h, w, _ = image.shape
+                            # cv2.putText(
+                            #     image,
+                            #     f"Flex: {forearm_orientation['flexion_extension']:.1f}",
+                            #     (
+                            #         int(left_elbow_2d.x * w),
+                            #         int(left_elbow_2d.y * h) - 20,
+                            #     ),
+                            #     cv2.FONT_HERSHEY_SIMPLEX,
+                            #     2,
+                            #     (255, 255, 0),
+                            #     2,
+                            # )
                             output.write(image)
 
-                        csv_writer.writerow(
-                            [frame, forearm_orientation["flexion_extension"]]
-                        )
+                        # csv_writer.writerow(
+                        #     [frame, forearm_orientation["flexion_extension"]]
+                        # )
 
                         # cv2.putText(
                         #     image,
@@ -834,10 +836,10 @@ def process_img(file_path, show):
 
     if show:
         try:
-            img_resized = cv2.resize(img_copy, [500, 700])
+            img_resized = cv2.resize(img_copy, [500, 580])
             cv2.imshow("Found image", img_resized)
 
-            resized_landmarks = cv2.resize(positions.image, [500, 700])
+            resized_landmarks = cv2.resize(positions.image, [500, 580])
 
             # get midpoint of hip
             left_hip = positions.joint_pos["LEFT_HIP"]
@@ -880,25 +882,25 @@ def process_img(file_path, show):
                 700, 500, positions.joint_pos2d["RIGHT_SHOULDER"]
             )
 
-            cv2.putText(
-                resized_landmarks,
-                f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES}",
-                [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 20],
-                cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                1,
-                [255, 255, 0],
-                1,
-            )
+            # cv2.putText(
+            #     resized_landmarks,
+            #     f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES}",
+            #     [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 20],
+            #     cv2.FONT_HERSHEY_COMPLEX_SMALL,
+            #     1,
+            #     [255, 255, 0],
+            #     1,
+            # )
 
-            cv2.putText(
-                resized_landmarks,
-                f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES}",
-                [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 40],
-                cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                1,
-                [255, 255, 0],
-                1,
-            )
+            # cv2.putText(
+            #     resized_landmarks,
+            #     f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES}",
+            #     [right_shoulder_2d_pos[0] + 20, right_shoulder_2d_pos[1] + 40],
+            #     cv2.FONT_HERSHEY_COMPLEX_SMALL,
+            #     1,
+            #     [255, 255, 0],
+            #     1,
+            # )
 
             # click.echo(f"Shoulder flexion = {shoulder_flexion * RADIAN_TO_DEGREES}")
             # click.echo(f"Shoulder abduction = {shoulder_abduction * RADIAN_TO_DEGREES}")

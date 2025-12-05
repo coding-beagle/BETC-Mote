@@ -117,9 +117,7 @@
 
 %%%%%%%%%%%%%%%%%% ABSTRACT %%%%%%%%%%%%%%%%%%
 \begin{abstract} % put abstract here.
-  This is abstract text. 
-  
-  \lipsum[1-2]
+  Abstract goes here.
 \end{abstract}%
 \clearpage
 
@@ -211,10 +209,10 @@ Acknowledgments go here.
     This way the system is able to accurately capture the intent of the operator's movement, whilst preserving some level of accuracy.
 
     Similar research exists for time based requirements as well, especially in the area of latency.
-    It seems intuitive that more delay in a teleoperation system will decrease performance - research suggests that this manifests itself within two key figures of \(600 \text{ms}\) and \(1500 \text{ms}\) \cite{ref:teleoplatency}.
-    Task performance generally decreased with latency, with task performance falling at a latency of \(600 \text{ms}\) and any latency above \(1500 \text{ms}\) showing the most significant drop in task performance.
-    Therefore the final arm tracking system should aim to measure arm angles well below the \(600 \text{ms}\) threshold.
-    The Nyquist criterion equivalent of this threshold is used as a well informed estimate of how much latency can be present in the system, leaving a final requirement of \(300 \text{ms}\). 
+    It seems intuitive that more delay in a teleoperation system will decrease performance - research suggests that this manifests itself within two key figures of \(600 \text{ ms}\) and \(1500 \text{ ms}\) \cite{ref:teleoplatency}.
+    Task performance generally decreased with latency, with task performance falling at a latency of \(600 \text{ ms}\) and any latency above \(1500 \text{ ms}\) showing the most significant drop in task performance.
+    Therefore the final arm tracking system should aim to measure arm angles well below the \(600 \text{ ms}\) threshold.
+    The Nyquist criterion equivalent of this threshold is used as a well informed estimate of how much latency can be present in the system, leaving a final requirement of \(300 \text{ ms}\). 
     
     The budget for this project is £\(180\).
     This means that the final solution must be cheaper to implement than this.
@@ -225,62 +223,77 @@ Acknowledgments go here.
     Each method will score \(1 - 5\) in each category, with a brief comment justifying the score in each column.
     
     Below are the decision factors of the Pugh Matrix and a brief description of how they are scored: \begin {itemize}
-      \item \textbf{Complexity} - \(1\) means that this design is unlikely to be built in the time budget of \(240\) hours, \(5\) means that this design is easily built in this time period.
-      \item \textbf{Cheapness} - \(1\) means that this design cannot be achieved in the provided budget of £\(180\), \(5\) means that this design is easily achievable in this budget.
+      \item \textbf{Complexity} - This is calculated based on a well reasoned estimate of the total time to build the system. Each multiple of \(48\) hours reduces the score by \(1\), e.g. \(0 - 48\text{ hours}\) would score \(5\), \(49 - 96\text{ hours}\) would score \(4\).
+      \item \textbf{Cheapness} - This is calculated based on a well reasoned estimate of the total cost of building the system. Each multiple of £\(36\) reduces the score by \(1\), e.g. \(\text{£}0 - \text{£}36\) would score \(5\), \(\text{£}37 - \text{£}72\) would score \(4\).
       \item \textbf{Accuracy} - This is calculated from available research on the accuracy of this method. Each multiple of \(5 \degree\) above \(5 \degree\) reduces the score by \(1\), e.g. an absolute accuracy of \(6 - 10 \degree\) would score \(4\), \(11 - 15 \degree\) would score \(3\).
-      \item \textbf{Latency} - This is calculated from available research on the time it takes to obtain a single measurement of all 7 joint angles from this method. Each multiple of \(100 \text{ms}\) above \(300 \text{ms}\) reduces the score by \(1\), e.g. a latency of \(301 \text{ms} - 400 \text{ms}\) would score \(4\).
+      \item \textbf{Latency} - This is calculated from available research on the time it takes to obtain a single measurement of all 7 joint angles from this method. Each multiple of \(100 \text{ ms}\) above \(300 \text{ ms}\) reduces the score by \(1\), e.g. a latency of \(301 \text{ ms} - 400 \text{ ms}\) would score \(4\).
     \end{itemize}
+    %%% TODOO PLS ADD MORE HERE
+    \begin{table}[h]
+      \centering
+      \small
+      \begin{tabular}{>{\raggedright\arraybackslash}p{2.5cm}|>{\centering\arraybackslash}p{1.8cm}|>{\centering\arraybackslash}p{1.8cm}|>{\centering\arraybackslash}p{1.8cm}|>{\centering\arraybackslash}p{1.8cm}|c}
+      \toprule
+      \textbf{Method} & \textbf{Complexity \(1-5\)} & \textbf{Cheapness \(1-5\)} & \textbf{Accuracy \(1-5\)} & \textbf{Latency (\(1-5\))} & \textbf{Total} \\
+      \midrule
+      IMU-based & \(3\) & \(4\) & \(3\) & \(5\) & \(15\) \\
+       & Approximately \(100\text{ hours}\) for drift correction & £\(50-\text{£}60\) & \(2.8 \degree\) \cite{ref:imuerror} & <1 ms \cite{ref:imudatasheet} & \\
+      \midrule
+      Pose estimation via computer vision & \(5\) & \(5\) & \(3\) & \(5\) & \(18\) \\
+       & Existing solutions & £\(30\) USB Camera & \(10\degree-15\degree\) \cite{ref:cverror} & \(\le 100 \text{ ms}\) \cite{ref:cvlatency} & \\
+      \midrule
+      Flex Sensors & 3 & 4 & 3 & 5 & 15 \\
+       & Moderate fab & £40-60 & 10-15° error & <100ms & \\
+      \midrule
+      AHRS & 3 & 3 & 4 & 4 & 14 \\
+       & Moderate setup & £80-120 & 5-10° error & 100-200ms & \\
+      \midrule
+      Marker tracking via computer vision & 2 & 2 & 5 & 4 & 13 \\
+       & Very complex & £150+ & <5° error & 100-200ms & \\
+      \bottomrule
+      \end{tabular}
+      \caption{Pugh Matrix with detailed scoring justifications}
+      \label{tab:pugh_matrix_detailed}
+    \end{table}
 
-
-
-    % \begin{figure}
-    %   \centering
-    %   \includegraphics[alt={Put short description for screen readers here},width=0.3\textwidth,keepaspectratio=true]{uom_logo.pdf}
-    %   \caption[Short caption for list of figures]{Example figure. Full caption goes here. Often a short caption in [] is used as well as the main caption to keep the list of figures tidy; it gets messy if there are long captions going over more than one line.}
-    %   \label{fig:uom_logo}
-    % \end{figure} 
-
-    % \begin{figure}
-    %   \centering
-    %   \begin{subfigure}{0.3\linewidth}
-    %     \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
-    %     \caption{}
-    %     \label{fig:subfig_a}
-    %   \end{subfigure}
-    %   \begin{subfigure}{0.3\linewidth}
-    %     \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
-    %     \caption{}
-    %     \label{fig:subfig_b}
-    %   \end{subfigure}
-    %   \begin{subfigure}{0.3\linewidth}
-    %     \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
-    %     \caption{}
-    %     \label{fig:subfig_c}
-    %  \end{subfigure}
-    %  \caption{Three copies of the University logo. (a) Copy one. (b) Copy two. (c) Copy three.}
-    %  \label{fig:uom_logo_in_subfig}
-    % \end{figure}  
-  
+    Analysis of existing methods shows that the two computer vision approaches score the same in terms of viability, therefore further analysis will be required to confirm the viability of each method.
+    These will be performed in the form of accuracy and latency experiments, which will give the freedom of being able to analyse more factors than the literature - including accuracy of measuring multiple joints angles simultaneously.
   
 %%%%%%%%%%%%%%%%%% METHODS %%%%%%%%%%%%%%%%%%
 \section{Methods} \label{sec:methods}
 
-  \subsection{Introduction}
-    \lipsum[1] % adds dummy text to fill up the example
-  
-  \subsection{Content} \label{sec:content}
-    \subsubsection{Introduction}
-      \lipsum[1] % adds dummy text to fill up the example
-	
-    \subsubsection{Detail}
-      \lipsum[7-11] % adds dummy text to fill up the example
+  \subsection{Comparison of both computer vision methods}
+    In order to evaluate the accuracy of both computer vision methods, a simple experiment was set up to measure the absolute accuracy on the joint angles that can be measured.
+    A goniometer is attached to the wall at \(90 \degree\), with two end positions marked at \(90 \degree\) and \(180 \degree\).
+    The subject will move their arm repeatedly between these markers, and the recording is captured by a camera as described in fig \ref{fig:datacollection}.
+
+    \begin{figure}[h!]
+      \centering
+      \begin{subfigure}[b]{0.4\linewidth}
+        \includegraphics[width=\linewidth]{images/experiment2d.png}
+        \caption{A diagram of the experimental setup}
+      \end{subfigure}
+      \begin{subfigure}[b]{0.4\linewidth}
+        \includegraphics[width=\linewidth]{images/experimentdataimg.png}
+        \caption{Example data capture}
+      \end{subfigure}
+      \caption{The experimental setup, showing data capture.}
+      \label{fig:datacollection}
+    \end{figure}
+
+    The subject will then flex and extend their elbow between the two endpoints. 
+    In order to obtain a sufficient amount of data, \(5\) videos are recorded, each showing \(10\) flexion and extensions.
+    This creates enough samples to perform ANOVA between each video, to maintain experimental integrity.
+    In order to measure error, the graph of elbow flexion angles is extended towards the 90 and 180 degree endpoints.
+    This secondary graph is then subtracted from the first graph to obtain the error value, from which we can calculate the root mean square error, and is shown in fig \ref{fig:elbow_flex_example}.
     
-    \subsubsection{More detail}
-      \lipsum[1-3] % adds dummy text to fill up the example
-	
-    \subsubsection{Summary}
-      \lipsum[1] % adds dummy text to fill up the example
-  
+    \begin{figure}[h!]
+      \centering
+      \includegraphics[width=\linewidth]{images/elbow_flex_graph.png}
+      \caption{The experimental setup, showing data capture.}
+      \label{fig:elbow_flex_example}
+    \end{figure}
+
   \subsection{Summary}
     \lipsum[6] % adds dummy text to fill up the example
 
