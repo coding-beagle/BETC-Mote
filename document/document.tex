@@ -271,7 +271,7 @@ Acknowledgments go here.
       \centering
       \begin{subfigure}[b]{0.4\linewidth}
         \includegraphics[width=\linewidth]{images/experiment2d.png}
-        \caption{A diagram of the experimental setup}
+        \caption{A diagram of the experimental setup.}
       \end{subfigure}
       \begin{subfigure}[b]{0.4\linewidth}
         \includegraphics[width=\linewidth]{images/experimentdataimg.png}
@@ -284,14 +284,28 @@ Acknowledgments go here.
     The subject will then flex and extend their elbow between the two endpoints. 
     In order to obtain a sufficient amount of data, \(5\) videos are recorded, each showing \(10\) flexion and extensions.
     This creates enough samples to perform ANOVA between each video, to maintain experimental integrity.
-    In order to measure error, the graph of elbow flexion angles is extended towards the 90 and 180 degree endpoints.
+    In order to measure error, the graph of elbow flexion angles is extended towards the \(90 \degree\) and \(180 \degree\) endpoints.
     This secondary graph is then subtracted from the first graph to obtain the error value, from which we can calculate the root mean square error, and is shown in fig \ref{fig:elbow_flex_example}.
     
     \begin{figure}[h!]
       \centering
       \includegraphics[width=\linewidth]{images/elbow_flex_graph.png}
-      \caption{The experimental setup, showing data capture.}
+      \caption{Showing how RMSE is calculated from elbow flexion data.}
       \label{fig:elbow_flex_example}
+    \end{figure}
+
+    Upon analysis of the RMSE, it was found that this value was \(25.4 \degree\). % TODO CALCULATE VALUE %
+    which was greater than the literature value of \(10.37 \degree\) \cite{ref:cverror}. 
+    Frame by frame analysis of the video showed that this descrepancy was not attributable to human error - the arm was clearly flexing and extending to the correct endpoints.
+    Plotting the inferred joint positions frame by frame revealed the culprit - perspective!
+    The machine learning model used for joint position extraction is finding extra movement in the depth axis of the video, and attributing it to roll in the elbow axis, instead of flexion.
+    This is clearly shown in fig \ref{fig:phantom_flex}.
+
+    \begin{figure}[h!]
+      \centering
+      \includegraphics[scale=0.5]{images/elbow_flex_error.png}
+      \caption{Top view of inferred 3D joint positions.}
+      \label{fig:phantom_flex}
     \end{figure}
 
   \subsection{Summary}
