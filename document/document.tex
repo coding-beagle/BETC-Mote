@@ -21,9 +21,11 @@
   % More meta-data fielda can be added here if wanted, see https://ctan.org/pkg/pdfx?lang=en for fields
 \end{filecontents*}
 
+\newcommand{\newtitle}{Human Teleoperation of a Laterally Mounted Robot Arm}
+\newcommand{\mystudentid}{11006231}
 
 %%%%%%%%%%%%%%%%%% DOCUMENT SETUP %%%%%%%%%%%%%%%%%%
-\documentclass[11pt,beng]{uom_eee_dissertation_casson} % course can be msc or beng
+\documentclass[12pt,beng]{uom_eee_dissertation_casson} % course can be msc or beng
 % Check your course handbook for the correct font size to use. Make sure this is correct - you may get an overlength penalty if not! Is currently 12 for BEng, and 11 for MSc. The template doesn't change this automatically for you
 
 
@@ -91,12 +93,12 @@
 % Don't edit these lines, title and author are automatically taken from the document meta-data defined above
 \begin{document}
 \makeatletter
-\title{\xmp@Title}
-\studentid{\xmp@Author}
+\title{\newtitle}
+\studentid{\mystudentid}
 \makeatother
 
 % Set the below yourself
-\course{Advanced Control and Systems Engineering}  % "Master of Science in" or "Bachelor of Engineering in "
+\course{Electronic Engineering}  % "Master of Science in" or "Bachelor of Engineering in "
                                                    % is added automatically
                                                    % Our BEng courses are: Electrical and Electronic Engineering, Electrical Engineering, and Mechatronic Engineering
                                                    % Our MSc courses are: Advanced Control and Systems Engineering, Advanced Control and Systems Engineering with Extended Research, Communications and Signal Processing, Communications and Signal Processing with Extended Research, Electrical Power Systems Engineering, Advanced Electrical Power Systems Engineering, Renewable Energy and Clean Technology, Renewable Energy and Clean Technology with Extended Research, Robotics, Robotics with Extended Research
@@ -159,14 +161,13 @@ Acknowledgments go here.
   This ambiguity could lead to collisions with obstacles in the environment, and lack of safety for people within the envelope of the robot arm. 
   
   Whilst not necessarily critical in the use cases that \citeauthor{ref:Zhou_Yang_Wang_Dong_2025} and \citeauthor{ref:Lyu_Yang_Yang_2025} describe - remote welding inspection and simple delivery and manipulation tasks for an elderly patient - a scenario that is obstacle rich would require precise control of the robot arm.
-  One such scenario is an underwater environment where a telescopic robot arm is attempting to collect a sample. 
+  One such scenario is an underwater environment where a telescopic robot arm is attempting to collect a sample.
   Whilst \citeauthor{ref:Jin_Ji_Yan_2023} describes a potential autonomous solution \cite{ref:Jin_Ji_Yan_2023}, this method is comparatively slow to the prospect of remote teleoperation: ranging from five to nine seconds in the simple case where the target object and origin of the robot arm is stationary.
   Consequently, the complexity increase for the case where nothing is stationary, a more realistic use case, would mean that this method would be inefficient compared to the intuition of a trained operator. 
+  Additionally, \citeauthor{ref:vranalysis} shows that for tasks involving teleoperation of a robot for pick and place tasks, virtual reality style mapping of head movements with arm to end effector mapping is more efficient and less error prone than a typical joystick \cite{ref:vranalysis}.
 
   Other potential areas of application of full arm tracking could be in the medical industry and with surgical robots, where collisions with patients is unwanted. 
   Likewise, nuclear decommissioning robots where absolute accuracy of matching an operator's intentions is critical.
-
-  These limitations suggest the need for a more comprehensive tracking and mapping approach that uses the full kinematic data available from the operator.
 
   \subsection{Aims and objectives}
   The overall aim is to create a system for mapping the joint angles of a human arm to a shoulder-mounted robot arm.
@@ -174,7 +175,8 @@ Acknowledgments go here.
   To achieve this goal, there will be an evaluation of available arm tracking methods. 
   Many methods currently exist for tracking the joint angles of robot arms, including: IMU based solutions discussed earlier, attitude and heading reference systems \cite{ref:Mazomenos_Biswas_Cranny_Rajan_Maharatna_Achner_Klemke_Jobges_Ortmann_Langendorfer_2016}, computer vision based systems \cite{ref:Phuong_Cong_2024}, and flex sensor based systems \cite{ref:Nalam_Manivannan_2014}, among others.
   A rigorous examination of these methods will be conducted as a prerequisite to the final implementation, to understand the applicability and feasibility of each tracking system.
-  Relevant tracking metrics will be discussed in the methodology section, but include cost, accuracy, engineering complexity, etc.
+  Relevant tracking metrics will be discussed in the literature review, but include factors such as cost, accuracy, engineering complexity, etc.
+  These metrics have been selected in order to allow for the feasible completion of this project given the time, scope and availability of resources for the final year project. 
 
   Finally, it is acknowledged that the procurement of a seven DoF robot arm is unlikely for a Bachelor's thesis. 
   Hence, the final implementation of the tracking method will be created in the form of a simulation in CoppeliaSim.
@@ -186,113 +188,78 @@ Acknowledgments go here.
 \section{Literature review}
 
   \subsection{Introduction}
-    \lipsum[1] 
-  
-  \subsection{Example display items}
-    This is an example of providing a cross-reference to \autoref{sec:methods}. Similarly, this is an example cross-reference to a sub-subsection, \autoref{sec:content}.
+    The measurement of human arm joint angles has been an interest of academia for several decades: with one of the first examples being demonstrated by \citeauthor{ref:videobasedumanmotioncapture}. 
+    In industrial settings, full body tracking has primarily been used in the film industry to map an actor's performance onto computer generated characters \cite{ref:whatmocap}.
+    The main advantage of this is to save time in the creation of realistic looking movements \cite{ref:mocapwhy}, as an actor is able to portray realistic and nuanced motion that gets digitised. 
+    Therefore, it seems logical that one should be able to combine the two applications - have a skilled operator trained in specific movement patterns to remotely control industrial robots where traditional control methods (e.g. joysticks) are unsuitable.
+    For example, in an application that compared participants performance between a purely joystick based control method, and VR control with hand tracking, tasks were completed up to \num{1.8} times faster and with a quarter of the errors (\(1.54 \% \) compared to \(8.65 \% \)) in the best cases)  \cite{ref:vranalysis}. 
+
+    Likewise, research from \citeauthor{ref:teleopanalysis} also seems to indicate that the time to complete a novel teleoperation task was initially better when users had their head movements mapped to the control of the robot's vision systems \cite{ref:teleopanalysis}. 
+    However, it is important to acknowledge that this study also showed that overall performance improved with experience between trial groups, and participants with more experience controlling the robot did better when controlling the robot via joystick.
+    The overall takeaway from this is that whether or not a novel approach to teleoperation is more effective than traditional joysticks is strongly dependent on the task.
+    Research conducted by \citeauthor{ref:Zhou_Yang_Wang_Dong_2025} shows that the control of a seven degree of freedom robot, could be improved via human arm teleoperation, which strengthens the justification for this project.
+
+  \subsection{Project requirements}
+    In order to compare the final system to existing systems and research, a baseline performance must be characterised.
+    This has been categorised into three distinct goals for the final system: position based requirements, time based requirements and resource based requirements.
+    These requirements will help to compare the existing technologies in the next subsection.
     
-    This is an example of adding references \cite{ref:jCAS09,ref:jCAS09a,ref:jCAS10}. If you want the author name, or similar, you can use: \citeauthor*{ref:jCAS09} in \citeyear{ref:jCAS09} introduced a really good idea. (This is for when you primarily use numbered citations, but occasionally need an author's name. If using author names as the reference everywhere, change style=ieee in the biblatex setup above to whatever reference style you want, and then just use the cite command.)
+    Existing research into the lower bounds of human arm accuracy shows that experienced surgeons have approximately \(5 \degree\) of vertical movement range on all joints when asked to hold their hand on a target, and close to \(3 \degree\) range for horizontal movement.
+    The study performed by \citeauthor{ref:movementrange} was performed with novice and expert surgeons, which would imply that this range of joint movement is above average for most humans.
+    Taking this into account, the requirements are that the final system must be able to measure joint rotation in each joint up to a resolution of \(5 \degree\).
+    Any movement measured less than this resolution is presumed to be 'noise' from human inaccuracy, and will therefore need to be smoothed out in the final implementation.
+    This way the system is able to accurately capture the intent of the operator's movement, whilst preserving some level of accuracy.
 
-    For adding \emph{emphasis} use the emph command. In general, try to avoid texttt, textit, textbf and similar commands --- these don't tell the document \emph{why} the style is being changed, and this information is needed for screen readers. In contrast, emph gives meaning to the change in format. By default it uses italics, but you can change the style if you want to. 
+    Similar research exists for time based requirements as well, especially in the area of latency.
+    It seems intuitive that more delay in a teleoperation system will decrease performance - research suggests that this manifests itself within two key figures of \(600 \text{ms}\) and \(1500 \text{ms}\) \cite{ref:teleoplatency}.
+    Task performance generally decreased with latency, with task performance falling at a latency of \(600 \text{ms}\) and any latency above \(1500 \text{ms}\) showing the most significant drop in task performance.
+    Therefore the final arm tracking system should aim to measure arm angles well below the \(600 \text{ms}\) threshold.
+    The Nyquist criterion equivalent of this threshold is used as a well informed estimate of how much latency can be present in the system, leaving a final requirement of \(300 \text{ms}\). 
     
-    Here are two example tables. \autoref{table:example_tabularx} is an example using tabularx to fix the size of the table to be the same width as the page, with columns that auto-wrap if the text is too long. \autoref{table:example_tabular} is an example using tabular where the width of the table is set by its contents. It may go beyond the width of the page.
-    \begin{table}
-      \centering
-      \caption[Short caption for list of tables]{Example table. Full caption goes here. Often a short caption in [] is used as well as the main caption to keep the list of figures tidy; it gets messy if there are long captions going over more than one line.}
-      \label{table:example_tabularx}
-      \begin{tabularx}{\linewidth}{ZZZZZ}
-        \toprule
-        \multirow{2}{*}{Participant} & \multicolumn{2}{c}{Number / \%} & \multicolumn{2}{c}{Duration / \%} \\
-                                     & Prime dresses & Non-prime dresses & Prime dresses & Non-prime dresses \\
-	  \otoprule
-        1  & 33.33 & 33.91 & 20.83 & 18.42 \\
-        2  & 13.04 & 17.50 & 04.93 & 07.62 \\
-        3  & 22.73 & 20.10 & 13.00 & 08.20 \\
-        4  & 31.34 & 21.88 & 10.57 & 11.09 \\
-        5  & 08.47 & 19.32 & 03.04 & 09.73 \\
-        \hline
-        Mean & 16.4 & 16.5 & 07.8 & 07.5 \\
-        Standard deviation & 09.7 & 06.6 & 05.4 & 03.3 \\
-        \bottomrule
-      \end{tabularx}
-    \end{table}
-
-    \begin{table}
-      \centering
-      \caption[Short caption for list of tables]{Example table. Full caption goes here. Often a short caption in [] is used as well as the main caption to keep the list of figures tidy; it gets messy if there are long captions going over more than one line.}
-      \label{table:example_tabular}
-      \begin{tabular}{ccccc}
-        \toprule
-        \multirow{2}{*}{Participant} & \multicolumn{2}{c}{Number / \%} & \multicolumn{2}{c}{Duration / \%} \\
-                                     & Prime dresses & Non-prime dresses & Prime dresses & Non-prime dresses \\
-	  \otoprule
-        1  & 33.33 & 33.91 & 20.83 & 18.42 \\
-        2  & 13.04 & 17.50 & 04.93 & 07.62 \\
-        3  & 22.73 & 20.10 & 13.00 & 08.20 \\
-        4  & 31.34 & 21.88 & 10.57 & 11.09 \\
-        5  & 08.47 & 19.32 & 03.04 & 09.73 \\
-        \hline
-        Mean & 16.4 & 16.5 & 07.8 & 07.5 \\
-        Standard deviation & 09.7 & 06.6 & 05.4 & 03.3 \\
-        \bottomrule
-      \end{tabular}
-    \end{table}
-  
-    This is an example equation in text \(2\sin{\omega t}\). Below is an example of a displayed equation. See \autoref{equ:example} for info.
-    \begin{equation}
-        a^{2} + b^{2} = c^{2} \label{equ:example}
-    \end{equation}
-
-    Note that numbers are displayed differently in the text depending on how they are entered. Compare for example 123456 vs.\ \(123456\) vs.\ \num{123456}. Entering numbers directly, such as 1955, should be used for \emph{text mode} numbers. That is, those representing text (dates, page numbers, and similar). Numbers representing maths, or variables or similar, should be entered inside \textbackslash( \textbackslash) or \lstinline{\num} so they are typeset in the same way as they appear in an equation. (This requires a bit of discipline, but helps ensure consistent use of number styles throughout.) \lstinline{\num} is provided by the \lstinline{siunitx} package. The display it provides can be customised if wanted. Documentation is at \url{https://texdoc.org/serve/siunitx/0}.
-
-    This is an example of a quote in text \textcquote{ref:jCAS10}{The electroencephalogram (EEG) is a classic noninvasive method for measuring a person's brainwaves}. Below is an example of a displayed quote. Both are using the csquotes package.
-    \begin{displaycquote}{ref:jCAS10}
-      Electrodes are placed on the scalp to detect the microvolt-sized signals that result from synchronized neuronal activity within the brain.
-    \end{displaycquote}
-
-    This is an example figure. See \autoref{fig:uom_logo} for more details. Alternatively, can put multiple figures into a subfigure environment, for example \autoref{fig:uom_logo_in_subfig}, or \autoref{fig:subfig_b} to cite a particular sub-figure.
-    \begin{figure}
-      \centering
-      \includegraphics[alt={Put short description for screen readers here},width=0.3\textwidth,keepaspectratio=true]{uom_logo.pdf}
-      \caption[Short caption for list of figures]{Example figure. Full caption goes here. Often a short caption in [] is used as well as the main caption to keep the list of figures tidy; it gets messy if there are long captions going over more than one line.}
-      \label{fig:uom_logo}
-    \end{figure} 
-
-    \begin{figure}
-      \centering
-      \begin{subfigure}{0.3\linewidth}
-        \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
-        \caption{}
-        \label{fig:subfig_a}
-      \end{subfigure}
-      \begin{subfigure}{0.3\linewidth}
-        \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
-        \caption{}
-        \label{fig:subfig_b}
-      \end{subfigure}
-      \begin{subfigure}{0.3\linewidth}
-        \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
-        \caption{}
-        \label{fig:subfig_c}
-     \end{subfigure}
-     \caption{Three copies of the University logo. (a) Copy one. (b) Copy two. (c) Copy three.}
-     \label{fig:uom_logo_in_subfig}
-    \end{figure}
-
-    An example code listing is given in \autoref{code:example}. See \url{https://www.overleaf.com/learn/latex/Code_listing} for more examples of how to display code. Code in the body of the text can be included as \lstinline{for} or \lstinline{while} or \lstinline{main}.
-
-    \begin{lstlisting}[language=Python, caption={My code example}, label={code:example}]
-import numpy as np
+    The budget for this project is £\(180\).
+    This means that the final solution must be cheaper to implement than this.
+    Likewise, the time to complete this project is \(30\) unit credits worth of time, equating to \(240\) hours of time commitment, excluding time required for completing written deliverables.
+    Both of these factors will mean that the final solution favours simpler, more complete solutions - anything novel is a potential failure point that could mean the project does not complete.  
+  \subsection{Survey of existing tracking technologies}
+    In order to fully evaluate the myriad of arm tracking methods available, a Pugh Matrix has been created to evaluate and compare several factors between each method.
+    Each method will score \(1 - 5\) in each category, with a brief comment justifying the score in each column.
     
-def my_filter(in,f_obj):
-    y = filter(f_obj,in)
-    
-    return y
-    \end{lstlisting}
-  
-  \subsection{Summary}
-    \lipsum[6] % adds dummy text to fill up the example
-  
+    Below are the decision factors of the Pugh Matrix and a brief description of how they are scored: \begin {itemize}
+      \item \textbf{Complexity} - \(1\) means that this design is unlikely to be built in the time budget of \(240\) hours, \(5\) means that this design is easily built in this time period.
+      \item \textbf{Cheapness} - \(1\) means that this design cannot be achieved in the provided budget of £\(180\), \(5\) means that this design is easily achievable in this budget.
+      \item \textbf{Accuracy} - This is calculated from available research on the accuracy of this method. Each multiple of \(5 \degree\) above \(5 \degree\) reduces the score by \(1\), e.g. an absolute accuracy of \(6 - 10 \degree\) would score \(4\), \(11 - 15 \degree\) would score \(3\).
+      \item \textbf{Latency} - This is calculated from available research on the time it takes to obtain a single measurement of all 7 joint angles from this method. Each multiple of \(100 \text{ms}\) above \(300 \text{ms}\) reduces the score by \(1\), e.g. a latency of \(301 \text{ms} - 400 \text{ms}\) would score \(4\).
+    \end{itemize}
+
+
+
+    % \begin{figure}
+    %   \centering
+    %   \includegraphics[alt={Put short description for screen readers here},width=0.3\textwidth,keepaspectratio=true]{uom_logo.pdf}
+    %   \caption[Short caption for list of figures]{Example figure. Full caption goes here. Often a short caption in [] is used as well as the main caption to keep the list of figures tidy; it gets messy if there are long captions going over more than one line.}
+    %   \label{fig:uom_logo}
+    % \end{figure} 
+
+    % \begin{figure}
+    %   \centering
+    %   \begin{subfigure}{0.3\linewidth}
+    %     \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
+    %     \caption{}
+    %     \label{fig:subfig_a}
+    %   \end{subfigure}
+    %   \begin{subfigure}{0.3\linewidth}
+    %     \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
+    %     \caption{}
+    %     \label{fig:subfig_b}
+    %   \end{subfigure}
+    %   \begin{subfigure}{0.3\linewidth}
+    %     \includegraphics[alt={Put short description for screen readers here},width=\textwidth,keepaspectratio=true]{uom_logo.pdf}
+    %     \caption{}
+    %     \label{fig:subfig_c}
+    %  \end{subfigure}
+    %  \caption{Three copies of the University logo. (a) Copy one. (b) Copy two. (c) Copy three.}
+    %  \label{fig:uom_logo_in_subfig}
+    % \end{figure}  
   
   
 %%%%%%%%%%%%%%%%%% METHODS %%%%%%%%%%%%%%%%%%
