@@ -236,29 +236,33 @@ Acknowledgments go here.
       \textbf{Method} & \textbf{Complexity \(1-5\)} & \textbf{Cheapness \(1-5\)} & \textbf{Accuracy \(1-5\)} & \textbf{Latency (\(1-5\))} & \textbf{Total} \\
       \midrule
       IMU-based & \(3\) & \(4\) & \(3\) & \(5\) & \(15\) \\
-       & Approximately \(100\text{ hours}\) for drift correction, PCB design + sensor fusion & £\(50-\text{£}60\) & \(2.8 \degree\) \cite{ref:imuerror} & <1 ms \cite{ref:imudatasheet} & \\
+       & \(100\text{ hours}\) inc PCB design + drift correction & £\(50-\text{£}60\) & \(2.8 \degree\) \cite{ref:imuerror} & <1 ms \cite{ref:imudatasheet} & \\
       \midrule
       Pose estimation via computer vision & \(5\) & \(5\) & \(3\) & \(5\) & \(18\) \\
-       & Existing solutions & £\(30\) USB Camera & \(10\degree-15\degree\) \cite{ref:cverror} & \(\le 100 \text{ ms}\) \cite{ref:cvlatency} & \\
+       & Existing solutions reduce complexity \(30 - 40\text{ hours}\) & £\(30\) USB Camera & \(10\degree-15\degree\) \cite{ref:cverror} & \(\le 100 \text{ ms}\) \cite{ref:cvlatency} & \\
       \midrule
-      Flex Sensors & 3 & 4 & 3 & 5 & 15 \\
-       & Moderate fab & £40-60 & 10-15° error & <100ms & \\
+      Flex Sensors & 2 & 4 & 4 & 5 & 15 \\
+       & \(150 \text{ hours}\) & £40-60 & \(10\degree\) \cite{ref:bendaccuracy} & \(\le 100 \text{ ms}\) & \\
+      % \midrule
+      % AHRS & 3 & 3 & 4 & 5 & 15 \\
+      %  & Moderate setup & £80-120 & 5-10° error & 100-200ms & \\
       \midrule
-      AHRS & 3 & 3 & 4 & 4 & 14 \\
-       & Moderate setup & £80-120 & 5-10° error & 100-200ms & \\
-      \midrule
-      Marker tracking via computer vision & \(4\) & \(3\) & \(5\) & \(5\) & \(17\) \\
-       & Very complex & £150+ & <5° error & 100-200ms & \\
+      Marker tracking via computer vision & \(5\) & \(3\) & \(5\) & \(5\) & \(18\) \\
+       & Very complex, though can be simplified through FOSS & £180+ for Vicon, cheaper solutions exist & <5° error & 100-200ms & \\
       \bottomrule
       \end{tabular}
       \caption{Pugh Matrix with detailed scoring justifications}
       \label{tab:pugh_matrix_detailed}
     \end{table}
 
-    Analysis of existing methods shows that the two computer vision approaches score the same in terms of viability, therefore further analysis will be required to confirm the viability of each method.
+    Analysis of existing methods shows that the two computer vision approaches score similarly in terms of viability, therefore further analysis will be required to confirm the viability of each method.
+    The accuracy advantage of the marker tracking method makes it more appealing, though this is offset by the stupendous cost of conventional Vicon camera systems.
+    Open source software along with ArUco markers could be used to offset this cost, which will make further analysis necessary before choosing a final method.
+    For example, \citeauthor{ref:arucomarkers} describes using ArUco markers along with standard home cameras to perform specialised kinematic analysis \cite{ref:arucomarkers}.
     These will be performed in the form of accuracy and latency experiments, which will give the freedom of being able to analyse more factors than the literature - including accuracy of measuring multiple joints angles simultaneously.
   
 %%%%%%%%%%%%%%%%%% METHODS %%%%%%%%%%%%%%%%%%
+\pagebreak
 \section{Methods} \label{sec:methods}
 
   \subsection{Comparison of both computer vision methods}
@@ -293,7 +297,7 @@ Acknowledgments go here.
       \label{fig:elbow_flex_example}
     \end{figure}
 
-    Upon analysis of the RMSE, it was found that this value was \(25.4 \degree\). % TODO CALCULATE VALUE %
+    Upon analysis of the RMSE, it was found that this value was \(25.83 \degree\).
     which was greater than the literature value of \(10.37 \degree\) \cite{ref:cverror}. 
     Frame by frame analysis of the video showed that this descrepancy was not attributable to human error - the arm was clearly flexing and extending to the correct endpoints.
     Plotting the inferred joint positions frame by frame revealed the culprit - perspective!
@@ -303,16 +307,85 @@ Acknowledgments go here.
     \begin{figure}[h!]
       \centering
       \includegraphics[scale=0.5]{images/elbow_flex_error.png}
-      \caption{Top view of inferred 3D joint positions.}
+      \caption{Top view of inferred \(3\)D joint positions.}
       \label{fig:phantom_flex}
     \end{figure}
 
-  \subsection{Summary}
-    \lipsum[6] % adds dummy text to fill up the example
+    To analyse the performance of joint angle tracking in the three dimensional case, a simple movement path is created. 
+    A 7 DoF manipulator is created from the DH parameters in table \ref{tab:dh_parameters}.
+    These movements are then fed through a forward kinematics processing program to obtain a visualisation of this movement path, and this movement is recreated by the subject.
+    This path is shown in \ref{fig:threed_motion}.
+    This movement has been selected to be easily recreated, whilst showing movement in three different joint angles simultaneously. 
+    The same data processing for the two dimensional elbow flex case is used to obtain RMSE of three different joint angle movements.
 
+    \begin{table}[h]
+      \centering
+      \small
+      \begin{tabular}{>{\centering\arraybackslash}p{1.2cm}|>{\raggedright\arraybackslash}p{3.5cm}|>{\centering\arraybackslash}p{1.5cm}|>{\centering\arraybackslash}p{1.5cm}|>{\centering\arraybackslash}p{1.5cm}|>{\centering\arraybackslash}p{1.5cm}}
+      \toprule
+      \textbf{Joint} & \textbf{Description} & \(\boldsymbol{\theta_i}\) & \(\boldsymbol{\alpha_i}\) & \(\boldsymbol{d_i}\) & \(\boldsymbol{a_i}\) \\
+      \midrule
+      1 & Shoulder abduction/adduction & \(q_1\) & \(\frac{\pi}{2}\) & 0 & 0 \\
+      \midrule
+      2 & Shoulder flexion/extension & \(q_2\) & \(\frac{\pi}{2}\) & 0 & 0 \\
+      \midrule
+      3 & Shoulder rotation & \(q_3\) & \(-\frac{\pi}{2}\) & 0 & \(L_u\) \\
+      \midrule
+      4 & Elbow flexion/extension & \(q_4\) & \(\frac{\pi}{2}\) & 0 & 0 \\
+      \midrule
+      5 & Forearm rotation & \(q_5\) & \(-\frac{\pi}{2}\) & 0 & \(L_l\) \\
+      \midrule
+      6 & Wrist flexion/extension & \(q_6\) & \(\frac{\pi}{2}\) & 0 & 0 \\
+      \midrule
+      7 & Wrist radial/ulnar deviation & \(q_7\) & 0 & 0 & 0 \\
+      \bottomrule
+      \end{tabular}
+      \caption{Denavit-Hartenberg Parameters for 7-DoF Arm (where \(L_u\) is upper arm length and \(L_l\) is lower arm length)}
+      \label{tab:dh_parameters}
+    \end{table}
 
+  \begin{figure}[h!]
+      \centering
+      \includegraphics[scale=0.5]{images/combination.png}
+      \caption{3D Joint Motion Path}
+      \label{fig:threed_motion}
+  \end{figure}
+
+  \subsection{Results of joint angle tracking methods}
+    \textbf{This section is incomplete! The results from the marker tracking experiments will also be compiled here, and section 3.3 will discuss which method to use in section 4!}
+    Table \ref{tab:rmse_comparison} shows the compiled RMSE errors for tracking each joint in both the two dimension elbow flexing case and the three dimension movement path.
+
+    \begin{table}[h]
+      \centering
+      \small
+      \begin{tabular}{>{\raggedright\arraybackslash}p{3cm}|>{\centering\arraybackslash}p{2.5cm}|>{\centering\arraybackslash}p{2.5cm}|>{\centering\arraybackslash}p{2.5cm}|>{\centering\arraybackslash}p{2.5cm}}
+      \toprule
+      \textbf{Method} & \textbf{RMSE Error Elbow Flexion 2D (\(\degree\))} & \textbf{RMSE Error Elbow Flexion 3D (\(\degree\))} & \textbf{RMSE Error Shoulder Flexion (\(\degree\))} & \textbf{RMSE Error Shoulder Abduction (\(\degree\))} \\
+      \midrule
+      Pose estimation & 25.83 & 7.19 & 6.89 & 11.68 \\
+      \midrule
+      Marker Tracking & & & & \\
+      \bottomrule
+      \end{tabular}
+      \caption{RMSE Error Comparison for Different Tracking Methods}
+      \label{tab:rmse_comparison}
+    \end{table}
+
+    Whilst the two dimensional RMSE error is larger than the literature suggests, the three dimensional joint error shows better accuracy than expected.
+    Apart from the shoulder adduction/abduction measurements, each joint being tracked is close to the \(5 \degree\) requirements of the project.
+    An interesting aspect that was encountered when performing the accuracy characterisation experiments with pose estimation is shown in \ref{fig:weezered}, and points to a downside not immediately apparent.
+    The program uses machine learning to create an estimation of joint locations in an image and was ostensibly trained on a large corpus of human images.
+    Hence, there was trouble distinguishing between real humans and pictures of humans being worn on the subject's clothing - a downside in the favour of the marker tracking method.
+
+    \begin{figure}[h!]
+      \centering
+      \includegraphics[scale=0.5]{images/weezered.png}
+      \caption{Pose estimation software mistaking a picture of humans printed on the clothing for an actual person.}
+      \label{fig:weezered}
+  \end{figure}
 
 %%%%%%%%%%%%%%%%%% RESULTS %%%%%%%%%%%%%%%%%%
+\pagebreak
 \section{Results and discussion} \label{sec:results}
 
   \subsection{Introduction}
