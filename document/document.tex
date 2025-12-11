@@ -190,7 +190,7 @@ Acknowledgments go here.
     In industrial settings, full body tracking has primarily been used in the film industry to map an actor's performance onto computer generated characters \cite{ref:whatmocap}.
     The main advantage of this is to save time in the creation of realistic looking movements \cite{ref:mocapwhy}, as an actor is able to portray realistic and nuanced motion that gets digitised. 
     Therefore, it seems logical that one should be able to combine the two applications - have a skilled operator trained in specific movement patterns to remotely control industrial robots where traditional control methods (e.g. joysticks) are unsuitable.
-    For example, in an application that compared participants performance between a purely joystick based control method, and VR control with hand tracking, tasks were completed up to \num{1.8} times faster and with a quarter of the errors (\(1.54 \% \) compared to \(8.65 \% \)) in the best cases)  \cite{ref:vranalysis}. 
+    For example, in an application that compared participants performance between a purely joystick based control method, and VR control with hand tracking, tasks were completed up to \num{1.8} times faster and with a quarter of the errors (\(1.54 \% \) compared to \(8.65 \% \)) in the best cases  \cite{ref:vranalysis}. 
 
     Likewise, research from \citeauthor{ref:teleopanalysis} also seems to indicate that the time to complete a novel teleoperation task was initially better when users had their head movements mapped to the control of the robot's vision systems \cite{ref:teleopanalysis}. 
     However, it is important to acknowledge that this study also showed that overall performance improved with experience between trial groups, and participants with more experience controlling the robot did better when controlling the robot via joystick.
@@ -214,7 +214,7 @@ Acknowledgments go here.
     Therefore the final arm tracking system should aim to measure arm angles well below the \(600 \text{ ms}\) threshold.
     The Nyquist criterion equivalent of this threshold is used as a well informed estimate of how much latency can be present in the system, leaving a final requirement of \(300 \text{ ms}\). 
     
-    The budget for this project is £\(180\).
+    The budget for this project is \(£180\).
     This means that the final solution must be cheaper to implement than this.
     Likewise, the time to complete this project is \(30\) unit credits worth of time, equating to \(240\) hours of time commitment, excluding time required for completing written deliverables.
     Both of these factors will mean that the final solution favours simpler, more complete solutions - anything novel is a potential failure point that could mean the project does not complete.  
@@ -224,11 +224,10 @@ Acknowledgments go here.
     
     Below are the decision factors of the Pugh Matrix and a brief description of how they are scored: \begin {itemize}
       \item \textbf{Complexity} - This is calculated based on a well reasoned estimate of the total time to build the system. Each multiple of \(48\) hours reduces the score by \(1\), e.g. \(0 - 48\text{ hours}\) would score \(5\), \(49 - 96\text{ hours}\) would score \(4\).
-      \item \textbf{Cheapness} - This is calculated based on a well reasoned estimate of the total cost of building the system. Each multiple of £\(36\) reduces the score by \(1\), e.g. \(\text{£}0 - \text{£}36\) would score \(5\), \(\text{£}37 - \text{£}72\) would score \(4\).
+      \item \textbf{Cheapness} - This is calculated based on a well reasoned estimate of the total cost of building the system. Each multiple of \(£36\) reduces the score by \(1\), e.g. \(\text{£}0 - \text{£}36\) would score \(5\), \(\text{£}37 - \text{£}72\) would score \(4\).
       \item \textbf{Accuracy} - This is calculated from available research on the accuracy of this method. Each multiple of \(5 \degree\) above \(5 \degree\) reduces the score by \(1\), e.g. an absolute accuracy of \(6 - 10 \degree\) would score \(4\), \(11 - 15 \degree\) would score \(3\).
       \item \textbf{Latency} - This is calculated from available research on the time it takes to obtain a single measurement of all 7 joint angles from this method. Each multiple of \(100 \text{ ms}\) above \(300 \text{ ms}\) reduces the score by \(1\), e.g. a latency of \(301 \text{ ms} - 400 \text{ ms}\) would score \(4\).
     \end{itemize}
-    %%% TODOO PLS ADD MORE HERE
     \begin{table}[h]
       \centering
       \small
@@ -237,7 +236,7 @@ Acknowledgments go here.
       \textbf{Method} & \textbf{Complexity \(1-5\)} & \textbf{Cheapness \(1-5\)} & \textbf{Accuracy \(1-5\)} & \textbf{Latency (\(1-5\))} & \textbf{Total} \\
       \midrule
       IMU-based & \(3\) & \(4\) & \(3\) & \(5\) & \(15\) \\
-       & Approximately \(100\text{ hours}\) for drift correction & £\(50-\text{£}60\) & \(2.8 \degree\) \cite{ref:imuerror} & <1 ms \cite{ref:imudatasheet} & \\
+       & Approximately \(100\text{ hours}\) for drift correction, PCB design + sensor fusion & £\(50-\text{£}60\) & \(2.8 \degree\) \cite{ref:imuerror} & <1 ms \cite{ref:imudatasheet} & \\
       \midrule
       Pose estimation via computer vision & \(5\) & \(5\) & \(3\) & \(5\) & \(18\) \\
        & Existing solutions & £\(30\) USB Camera & \(10\degree-15\degree\) \cite{ref:cverror} & \(\le 100 \text{ ms}\) \cite{ref:cvlatency} & \\
@@ -248,7 +247,7 @@ Acknowledgments go here.
       AHRS & 3 & 3 & 4 & 4 & 14 \\
        & Moderate setup & £80-120 & 5-10° error & 100-200ms & \\
       \midrule
-      Marker tracking via computer vision & 2 & 2 & 5 & 4 & 13 \\
+      Marker tracking via computer vision & \(4\) & \(3\) & \(5\) & \(5\) & \(17\) \\
        & Very complex & £150+ & <5° error & 100-200ms & \\
       \bottomrule
       \end{tabular}

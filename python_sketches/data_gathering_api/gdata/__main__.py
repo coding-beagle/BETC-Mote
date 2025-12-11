@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
+from datetime import datetime
+import sys
 
 from typing import Tuple, List
 
@@ -2065,6 +2067,59 @@ def calc_joints_write(file1, file2):
             writer.writerow(row)
 
 
+def remove_outliers(
+    data: np.ndarray, method: str = "iqr", iqr_multiplier: float = 1.5
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Remove outliers from data using IQR or Z-score method.
+
+    Parameters:
+    -----------
+    data : np.ndarray
+        Input data array
+    method : str
+        'iqr' for Interquartile Range or 'zscore' for Z-score method
+    iqr_multiplier : float
+        Multiplier for IQR method (default 1.5 for standard outlier detection)
+
+    Returns:
+    --------
+    cleaned_data : np.ndarray
+        Data with outliers replaced by interpolated values
+    outlier_mask : np.ndarray
+        Boolean mask indicating outlier positions
+    """
+    if method == "iqr":
+        q1 = np.percentile(data, 25)
+        q3 = np.percentile(data, 75)
+        iqr = q3 - q1
+        lower_bound = q1 - iqr_multiplier * iqr
+        upper_bound = q3 + iqr_multiplier * iqr
+        outlier_mask = (data < lower_bound) | (data > upper_bound)
+    elif method == "zscore":
+        mean = np.mean(data)
+        std = np.std(data)
+        z_scores = np.abs((data - mean) / std)
+        outlier_mask = z_scores > 3
+    else:
+        raise ValueError("method must be 'iqr' or 'zscore'")
+
+    # Interpolate outliers
+    cleaned_data = data.copy()
+    if np.any(outlier_mask):
+        # Get indices of non-outliers
+        valid_indices = np.where(~outlier_mask)[0]
+        outlier_indices = np.where(outlier_mask)[0]
+
+        # Interpolate outlier values
+        if len(valid_indices) > 1:
+            cleaned_data[outlier_indices] = np.interp(
+                outlier_indices, valid_indices, data[valid_indices]
+            )
+
+    return cleaned_data, outlier_mask
+
+
 def detect_motion_phases(
     data: np.ndarray, window: int = 5
 ) -> Tuple[int, int, np.ndarray]:
@@ -2176,7 +2231,39 @@ def transform_motion_pattern(
     return transformed
 
 
-def plot_comparison(result_df: pd.DataFrame, joint_column: str):
+def calculate_rmse(difference: np.ndarray, outlier_mask: np.ndarray = None) -> float:
+    """
+    Calculate Root Mean Square Error, optionally excluding outliers.
+
+    Parameters:
+    -----------
+    difference : np.ndarray
+        Array of differences between transformed and original
+    outlier_mask : np.ndarray, optional
+        Boolean mask indicating outlier positions to exclude
+
+    Returns:
+    --------
+    rmse : float
+        Root Mean Square Error
+    """
+    if outlier_mask is not None:
+        # Exclude outliers from RMSE calculation
+        valid_difference = difference[~outlier_mask]
+    else:
+        valid_difference = difference
+
+    if len(valid_difference) == 0:
+        return 0.0
+
+    mse = np.mean(valid_difference**2)
+    rmse = np.sqrt(mse)
+    return rmse
+
+
+def plot_comparison(
+    result_df: pd.DataFrame, joint_column: str, rmse: float, outlier_count: int
+):
     """
     Plot the original and transformed motion patterns with difference visualization.
     """
@@ -2185,7 +2272,7 @@ def plot_comparison(result_df: pd.DataFrame, joint_column: str):
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
 
-        # Plot original
+        # Plot original with outliers marked
         ax1.plot(
             result_df["frame"],
             result_df[f"{joint_column}_original"],
@@ -2193,6 +2280,18 @@ def plot_comparison(result_df: pd.DataFrame, joint_column: str):
             linewidth=2,
             color="blue",
         )
+        if "is_outlier" in result_df.columns:
+            outliers = result_df[result_df["is_outlier"]]
+            if len(outliers) > 0:
+                ax1.scatter(
+                    outliers["frame"],
+                    outliers[f"{joint_column}_original"],
+                    color="red",
+                    s=50,
+                    marker="x",
+                    label=f"Outliers ({outlier_count})",
+                    zorder=5,
+                )
         ax1.set_ylabel("Angle (degrees)")
         ax1.set_title(f"Original {joint_column} Motion")
         ax1.legend()
@@ -2219,7 +2318,7 @@ def plot_comparison(result_df: pd.DataFrame, joint_column: str):
         ax3.plot(
             result_df["frame"],
             difference,
-            label="Difference (Transformed - Original)",
+            label=f"Difference (RMSE: {rmse:.3f}°)",
             linewidth=2,
             color="red",
         )
@@ -2290,6 +2389,18 @@ def plot_comparison(result_df: pd.DataFrame, joint_column: str):
     default=1.0,
     help="Scaling aggressiveness (1.0=normal, <1.0=gentler, >1.0=more aggressive)",
 )
+@click.option(
+    "--outlier-method",
+    type=click.Choice(["iqr", "zscore", "none"]),
+    default="iqr",
+    help="Method for outlier detection (iqr, zscore, or none)",
+)
+@click.option(
+    "--iqr-multiplier",
+    type=float,
+    default=1.5,
+    help="IQR multiplier for outlier detection (default 1.5)",
+)
 def joint_analysis(
     csv_path: str,
     joint_column: str,
@@ -2299,6 +2410,8 @@ def joint_analysis(
     end_frame: int,
     smoothing_window: int,
     scale_factor: float,
+    outlier_method: str,
+    iqr_multiplier: float,
 ):
     """
     Analyze joint angle trends from CSV and create similar motion pattern with new endpoints.
@@ -2319,6 +2432,10 @@ def joint_analysis(
         Ending frame to analyze (if None, uses last frame)
     smoothing_window : int
         Window size for detecting endpoints (larger = more stable detection)
+    outlier_method : str
+        Method for outlier detection ('iqr', 'zscore', or 'none')
+    iqr_multiplier : float
+        Multiplier for IQR outlier detection
     """
     # Read the CSV file
     click.echo(f"Reading {csv_path}!")
@@ -2355,14 +2472,28 @@ def joint_analysis(
     original_data = df[joint_column].astype(float).values
     frames = df["frame"].values
 
-    # Detect endpoints and movement phases
+    # Remove outliers if requested
+    outlier_mask = np.zeros(len(original_data), dtype=bool)
+    if outlier_method != "none":
+        cleaned_data, outlier_mask = remove_outliers(
+            original_data, method=outlier_method, iqr_multiplier=iqr_multiplier
+        )
+        outlier_count = np.sum(outlier_mask)
+        click.echo(
+            f"Detected and removed {outlier_count} outliers using {outlier_method} method"
+        )
+    else:
+        cleaned_data = original_data
+        outlier_count = 0
+
+    # Detect endpoints and movement phases using cleaned data
     endpoint1_idx, endpoint2_idx, movement_phase = detect_motion_phases(
-        original_data, smoothing_window
+        cleaned_data, smoothing_window
     )
 
-    # Extract the original endpoints
-    original_endpoint1 = float(original_data[endpoint1_idx])
-    original_endpoint2 = float(original_data[endpoint2_idx])
+    # Extract the original endpoints from cleaned data
+    original_endpoint1 = float(cleaned_data[endpoint1_idx])
+    original_endpoint2 = float(cleaned_data[endpoint2_idx])
 
     click.echo(
         f"Detected endpoint 1 at frame {frames[endpoint1_idx]}: {original_endpoint1:.2f}"
@@ -2372,8 +2503,9 @@ def joint_analysis(
     )
 
     try:
+        # Transform using cleaned data
         transformed_data = transform_motion_pattern(
-            original_data,
+            cleaned_data,
             endpoint1_idx,
             endpoint2_idx,
             original_endpoint1,
@@ -2386,10 +2518,27 @@ def joint_analysis(
         click.echo(f"Error in transformation: {ex}")
         return
 
+    # Calculate RMSE excluding outliers
+    difference = transformed_data - cleaned_data
+    rmse = calculate_rmse(
+        difference, outlier_mask if outlier_method != "none" else None
+    )
+    click.echo(f"\nRMSE (excluding outliers): {rmse:.3f} degrees")
+
+    # Calculate statistics
+    mean_diff = np.mean(
+        difference[~outlier_mask] if outlier_method != "none" else difference
+    )
+    max_diff = np.max(np.abs(difference))
+    click.echo(f"Mean difference: {mean_diff:.3f} degrees")
+    click.echo(f"Max absolute difference: {max_diff:.3f} degrees")
+
     # Create output dataframe
     result_df = df.copy()
     result_df[f"{joint_column}_original"] = original_data
+    result_df[f"{joint_column}_cleaned"] = cleaned_data
     result_df[f"{joint_column}_transformed"] = transformed_data
+    result_df["is_outlier"] = outlier_mask
     result_df["motion_phase"] = [
         (
             "endpoint1"
@@ -2398,11 +2547,200 @@ def joint_analysis(
         )
         for i in range(len(original_data))
     ]
+    result_df["difference"] = difference
+    result_df["rmse"] = rmse
 
     # Save results
     output_path = csv_path.replace(".csv", "_transformed.csv")
     result_df.to_csv(output_path, index=False)
-    click.echo(f"Saved results to {output_path}")
+    click.echo(f"\nSaved results to {output_path}")
 
     # Plot comparison
-    plot_comparison(result_df, joint_column)
+    plot_comparison(result_df, joint_column, rmse, outlier_count)
+
+
+def estimate_distance(corners, marker_size, camera_matrix, dist_coeffs):
+    """
+    Estimate distance to ArUco marker using solvePnP.
+
+    Args:
+        corners: Detected marker corners
+        marker_size: Real-world size of marker in meters
+        camera_matrix: Camera calibration matrix
+        dist_coeffs: Camera distortion coefficients
+
+    Returns:
+        Distance in meters
+    """
+    # Define 3D points of marker corners in marker coordinate system
+    obj_points = np.array(
+        [
+            [-marker_size / 2, marker_size / 2, 0],
+            [marker_size / 2, marker_size / 2, 0],
+            [marker_size / 2, -marker_size / 2, 0],
+            [-marker_size / 2, -marker_size / 2, 0],
+        ],
+        dtype=np.float32,
+    )
+
+    # Solve PnP to get rotation and translation vectors
+    success, rvec, tvec = cv2.solvePnP(obj_points, corners, camera_matrix, dist_coeffs)
+
+    if success:
+        # Distance is the z-component of translation vector
+        distance = np.linalg.norm(tvec)
+        return distance
+    return None
+
+
+def get_camera_calibration(frame_shape):
+    """
+    Get approximate camera calibration parameters.
+    For accurate measurements, proper camera calibration is recommended.
+    """
+    h, w = frame_shape[:2]
+    # Approximate focal length
+    focal_length = w
+    center = (w / 2, h / 2)
+
+    camera_matrix = np.array(
+        [[focal_length, 0, center[0]], [0, focal_length, center[1]], [0, 0, 1]],
+        dtype=np.float32,
+    )
+
+    dist_coeffs = np.zeros((4, 1))
+    return camera_matrix, dist_coeffs
+
+
+@cli.command()
+@click.option(
+    "--marker-size",
+    default=0.05,
+    type=float,
+    help="Size of ArUco marker in meters (default: 0.05m = 5cm)",
+)
+@click.option(
+    "--output",
+    default="distances.csv",
+    type=str,
+    help="Output CSV file (default: distances.csv)",
+)
+@click.option("--camera", default=0, type=int, help="Camera index (default: 0)")
+@click.option(
+    "--dict",
+    "aruco_dict_name",
+    default="DICT_4X4_50",
+    type=click.Choice(
+        [
+            "DICT_4X4_50",
+            "DICT_4X4_100",
+            "DICT_5X5_50",
+            "DICT_5X5_100",
+            "DICT_6X6_50",
+            "DICT_6X6_100",
+        ],
+        case_sensitive=False,
+    ),
+    help="ArUco dictionary (default: DICT_4X4_50)",
+)
+def aruco_marker_webcam(marker_size, output, camera, aruco_dict_name):
+    """Detect ArUco markers from webcam and log their distance to a CSV file."""
+
+    # Initialize ArUco detector
+    aruco_dict = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, aruco_dict_name))
+    aruco_params = cv2.aruco.DetectorParameters()
+    detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
+
+    # Open webcam
+    cap = cv2.VideoCapture(camera + cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        click.echo(
+            click.style(f"Error: Could not open camera {camera}", fg="red"), err=True
+        )
+        sys.exit(1)
+
+    # Get camera calibration
+    ret, frame = cap.read()
+    if not ret:
+        click.echo(click.style("Error: Could not read from camera", fg="red"), err=True)
+        sys.exit(1)
+
+    camera_matrix, dist_coeffs = get_camera_calibration(frame.shape)
+
+    # Open CSV file
+    csv_file = open(output, "w", newline="")
+    csv_writer = csv.writer(csv_file)
+    csv_writer.writerow(["timestamp", "marker_id", "distance_m", "distance_cm"])
+
+    click.echo(click.style(f"Starting ArUco detection. Output: {output}", fg="green"))
+    click.echo(f"Marker size: {marker_size}m")
+    click.echo(f"Dictionary: {aruco_dict_name}")
+    click.echo(click.style("Press 'q' to quit\n", fg="yellow"))
+
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # Convert to grayscale
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # Detect markers
+            corners, ids, rejected = detector.detectMarkers(gray)
+
+            # If markers detected
+            if ids is not None:
+                # Draw detected markers
+                cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+
+                for i, marker_id in enumerate(ids):
+                    # Get corners for this marker
+                    marker_corners = corners[i][0]
+
+                    # Estimate distance
+                    distance = estimate_distance(
+                        marker_corners, marker_size, camera_matrix, dist_coeffs
+                    )
+
+                    if distance:
+                        # Log to CSV
+                        timestamp = datetime.now().isoformat()
+                        csv_writer.writerow(
+                            [
+                                timestamp,
+                                marker_id[0],
+                                f"{distance:.4f}",
+                                f"{distance*100:.2f}",
+                            ]
+                        )
+                        csv_file.flush()
+
+                        # Display on frame
+                        center = tuple(marker_corners.mean(axis=0).astype(int))
+                        text = f"ID:{marker_id[0]} Dist:{distance*100:.1f}cm"
+                        cv2.putText(
+                            frame,
+                            text,
+                            (center[0] - 50, center[1] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (0, 255, 0),
+                            2,
+                        )
+
+                        print(f"Marker {marker_id[0]}: {distance*100:.2f} cm")
+
+            # Display frame
+            cv2.imshow("ArUco Distance Detection", frame)
+
+            # Check for quit
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+    finally:
+        # Cleanup
+        cap.release()
+        cv2.destroyAllWindows()
+        csv_file.close()
+        click.echo(click.style(f"\nData saved to {output}", fg="green"))
