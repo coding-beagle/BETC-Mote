@@ -86,4 +86,26 @@
     - CoppeliaSim
       - Robot simulation stuff
       - URDF manipulation (for getting correct robot behaviour + dimensions)
-  - 
+
+08/02/26
+
+- Project Report Contents Page:
+
+1 Introduction        
+  1.1 Background and motivation 
+  1.2 Aims and objectives   
+2 Examination of existing human to robot arm teleoperation methods
+  2.1 Why choose teleoperation over conventional input methods
+  2.2 Specifications of the final arm tracking system
+  2.3 Analysis of existing tracking technologies and choosing one that is most suitable for this project       
+3 Comparing two viable computer vision based methods of robot arm teleoperation       
+  3.1 Comparison of both computer vision methods
+  3.2 Does either method meet the specification outlined in 2.2?       
+4 Does this approach outperform conventional input methods
+  4.1 Description of experiment to compare conventional vs human arm tracking
+  4.2 Scenario 1: Random position matching task 
+  4.3 Scenario 2: Simple environment pick and place task 
+  4.4 Scenario 3: Obstacle-rich environment pick and place task
+5 Analysis of results
+  5.1 Comparing task completion time, task completion accuracy 
+  5.2 How future work can improve on experiments

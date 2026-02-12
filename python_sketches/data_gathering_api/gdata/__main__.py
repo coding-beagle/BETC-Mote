@@ -2559,9 +2559,45 @@ def joint_analysis(
     plot_comparison(result_df, joint_column, rmse, outlier_count)
 
 
-def estimate_distance(corners, marker_size, camera_matrix, dist_coeffs):
+def rotation_vector_to_euler_angles(rvec):
     """
-    Estimate distance to ArUco marker using solvePnP.
+    Convert rotation vector to Euler angles (yaw, pitch, roll) in degrees.
+    
+    Args:
+        rvec: Rotation vector from solvePnP
+        
+    Returns:
+        Tuple of (yaw, pitch, roll) in degrees
+    """
+    # Convert rotation vector to rotation matrix
+    rotation_matrix, _ = cv2.Rodrigues(rvec)
+    
+    # Calculate Euler angles from rotation matrix
+    # Using the convention: rotation order is ZYX (yaw, pitch, roll)
+    sy = np.sqrt(rotation_matrix[0, 0]**2 + rotation_matrix[1, 0]**2)
+    
+    singular = sy < 1e-6
+    
+    if not singular:
+        roll = np.arctan2(rotation_matrix[2, 1], rotation_matrix[2, 2])
+        pitch = np.arctan2(-rotation_matrix[2, 0], sy)
+        yaw = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
+    else:
+        roll = np.arctan2(-rotation_matrix[1, 2], rotation_matrix[1, 1])
+        pitch = np.arctan2(-rotation_matrix[2, 0], sy)
+        yaw = 0
+    
+    # Convert to degrees
+    roll_deg = np.degrees(roll)
+    pitch_deg = np.degrees(pitch)
+    yaw_deg = np.degrees(yaw)
+    
+    return yaw_deg, pitch_deg, roll_deg
+
+
+def estimate_distance_and_orientation(corners, marker_size, camera_matrix, dist_coeffs):
+    """
+    Estimate distance and orientation to ArUco marker using solvePnP.
 
     Args:
         corners: Detected marker corners
@@ -2570,7 +2606,7 @@ def estimate_distance(corners, marker_size, camera_matrix, dist_coeffs):
         dist_coeffs: Camera distortion coefficients
 
     Returns:
-        Distance in meters
+        Tuple of (distance, yaw, pitch, roll) or (None, None, None, None)
     """
     # Define 3D points of marker corners in marker coordinate system
     obj_points = np.array(
@@ -2587,10 +2623,15 @@ def estimate_distance(corners, marker_size, camera_matrix, dist_coeffs):
     success, rvec, tvec = cv2.solvePnP(obj_points, corners, camera_matrix, dist_coeffs)
 
     if success:
-        # Distance is the z-component of translation vector
+        # Distance is the norm of translation vector
         distance = np.linalg.norm(tvec)
-        return distance
-    return None
+        
+        # Get orientation angles
+        yaw, pitch, roll = rotation_vector_to_euler_angles(rvec)
+        
+        return distance, yaw, pitch, roll
+    
+    return None, None, None, None
 
 
 def get_camera_calibration(frame_shape):
@@ -2644,7 +2685,7 @@ def get_camera_calibration(frame_shape):
     help="ArUco dictionary (default: DICT_4X4_50)",
 )
 def aruco_marker_webcam(marker_size, output, camera, aruco_dict_name):
-    """Detect ArUco markers from webcam and log their distance to a CSV file."""
+    """Detect ArUco markers from webcam and log their distance and orientation to a CSV file."""
 
     # Initialize ArUco detector
     aruco_dict = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, aruco_dict_name))
@@ -2670,15 +2711,18 @@ def aruco_marker_webcam(marker_size, output, camera, aruco_dict_name):
     # Open CSV file
     csv_file = open(output, "w", newline="")
     csv_writer = csv.writer(csv_file)
-    csv_writer.writerow(["timestamp", "marker_id", "distance_m", "distance_cm"])
+    csv_writer.writerow(["frame", "marker_id", "distance_m", "distance_cm", "yaw_deg", "pitch_deg", "roll_deg"])
 
     click.echo(click.style(f"Starting ArUco detection. Output: {output}", fg="green"))
     click.echo(f"Marker size: {marker_size}m")
     click.echo(f"Dictionary: {aruco_dict_name}")
     click.echo(click.style("Press 'q' to quit\n", fg="yellow"))
 
+    frame_count = 0
+    
     try:
         while True:
+            frame_count += 1
             ret, frame = cap.read()
             if not ret:
                 break
@@ -2698,12 +2742,12 @@ def aruco_marker_webcam(marker_size, output, camera, aruco_dict_name):
                     # Get corners for this marker
                     marker_corners = corners[i][0]
 
-                    # Estimate distance
-                    distance = estimate_distance(
+                    # Estimate distance and orientation
+                    distance, yaw, pitch, roll = estimate_distance_and_orientation(
                         marker_corners, marker_size, camera_matrix, dist_coeffs
                     )
 
-                    if distance:
+                    if distance is not None:
                         # Log to CSV
                         timestamp = datetime.now().isoformat()
                         csv_writer.writerow(
@@ -2712,27 +2756,44 @@ def aruco_marker_webcam(marker_size, output, camera, aruco_dict_name):
                                 marker_id[0],
                                 f"{distance:.4f}",
                                 f"{distance*100:.2f}",
+                                f"{yaw:.2f}",
+                                f"{pitch:.2f}",
+                                f"{roll:.2f}",
                             ]
                         )
                         csv_file.flush()
 
                         # Display on frame
                         center = tuple(marker_corners.mean(axis=0).astype(int))
-                        text = f"ID:{marker_id[0]} Dist:{distance*100:.1f}cm"
+                        
+                        # Display distance
+                        text1 = f"ID:{marker_id[0]} Dist:{distance*100:.1f}cm"
                         cv2.putText(
                             frame,
-                            text,
-                            (center[0] - 50, center[1] - 10),
+                            text1,
+                            (center[0] - 80, center[1] - 25),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.5,
                             (0, 255, 0),
                             2,
                         )
+                        
+                        # Display orientation
+                        text2 = f"Y:{yaw:.1f} P:{pitch:.1f} R:{roll:.1f}"
+                        cv2.putText(
+                            frame,
+                            text2,
+                            (center[0] - 80, center[1] - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (255, 255, 0),
+                            2,
+                        )
 
-                        print(f"Marker {marker_id[0]}: {distance*100:.2f} cm")
+                        print(f"Marker {marker_id[0]}: {distance*100:.2f} cm | Yaw: {yaw:.2f}° Pitch: {pitch:.2f}° Roll: {roll:.2f}°")
 
             # Display frame
-            cv2.imshow("ArUco Distance Detection", frame)
+            cv2.imshow("ArUco Distance & Orientation Detection", frame)
 
             # Check for quit
             if cv2.waitKey(1) & 0xFF == ord("q"):

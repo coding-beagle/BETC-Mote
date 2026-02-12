@@ -202,8 +202,8 @@ Acknowledgments go here.
     This has been categorised into three distinct goals for the final system: position based requirements, time based requirements and resource based requirements.
     These requirements will help to compare the existing technologies in the next subsection.
     
-    Existing research into the lower bounds of human arm accuracy shows that experienced surgeons have approximately \(5 \degree\) of vertical movement range on all joints when asked to hold their hand on a target, and close to \(3 \degree\) range for horizontal movement.
-    The study performed by \citeauthor{ref:movementrange} was performed with novice and expert surgeons, which would imply that this range of joint movement is above average for most humans.
+    Existing research into the lower bounds of human arm accuracy shows that experienced surgeons have approximately \(5 \degree\) of vertical movement range on all joints when asked to hold their hand on a target, and close to \(3 \degree\) range for horizontal movement \cite{ref:movementrange}.
+    However, the study is performed on novice and expert surgeons, which would imply that this range of joint movement is above average for most humans.
     Taking this into account, the requirements are that the final system must be able to measure joint rotation in each joint up to a resolution of \(5 \degree\).
     Any movement measured less than this resolution is presumed to be 'noise' from human inaccuracy, and will therefore need to be smoothed out in the final implementation.
     This way the system is able to accurately capture the intent of the operator's movement, whilst preserving some level of accuracy.
