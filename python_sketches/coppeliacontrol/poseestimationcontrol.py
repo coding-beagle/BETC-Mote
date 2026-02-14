@@ -48,7 +48,7 @@ def retarget(human_shoulder, human_wrist, robot_shoulder, robot_arm_length):
     # MediaPipe: x=right, y=down, z=toward camera
     # CoppeliaSim: x=forward, y=left, z=up
     remapped = [
-        normalised[2],  # CoppeliaSim x ← MediaPipe -z (depth becomes forward)
+        -normalised[2],  # CoppeliaSim x ← MediaPipe -z (depth becomes forward)
         normalised[0],  # CoppeliaSim y ← MediaPipe -x (right becomes left)
         -normalised[1],  # CoppeliaSim z ← MediaPipe  y (down, so negate if up is wrong)
     ]
