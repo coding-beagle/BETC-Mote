@@ -90,6 +90,27 @@ def invert_z(a) -> np.ndarray:
     return np.array([a[0], a[1], -a[2]])
 
 
+def calc_wrist_deviation(shoulder_pos, elbow_pos, wrist_pos, hand_pos, degrees=False):
+    # Define the flexion plane using shoulder, elbow, wrist
+    flexion_plane_normal = normal_vector_of_plane_on_three_points(
+        shoulder_pos, elbow_pos, wrist_pos
+    )
+
+    # Forearm axis
+    forearm_vec = vector_between_two_points(elbow_pos, wrist_pos)
+
+    # Hand vector
+    hand_vec = vector_between_two_points(wrist_pos, hand_pos)
+
+    # Project hand_vec onto the flexion plane
+    # (subtract the component along the plane normal)
+    hand_in_plane = (
+        hand_vec - np.dot(hand_vec, flexion_plane_normal) * flexion_plane_normal
+    )
+
+    return angle_between_vectors(forearm_vec, hand_in_plane, degrees)
+
+
 def calc_wrist_flex(elbow_pos, wrist_pos, hand_pos):
     return angle_between_three_points(elbow_pos, wrist_pos, hand_pos)
 
@@ -141,6 +162,8 @@ def calc_joint_angles_from_data_dict(in_data):
         left_shoulder, shoulder, hip_left, hip_right, elbow
     )
 
+    output["wrist_deviation"] = calc_wrist_deviation(shoulder, elbow, wrist, hand, True)
+
     output["shoulder_flexion"] = shoulder_flex * RADIAN_TO_DEGREES
     output["shoulder_abduction"] = shoulder_abduct * RADIAN_TO_DEGREES
     return output
@@ -156,6 +179,12 @@ rightShoulderAbduct = sim.getObject("/rightJoint1")
 rightShoulderFlex = sim.getObject("/rightJoint1/rightLink1/rightJoint2")
 rightElbowFlex = sim.getObject(
     "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/"
+)
+rightWristDeviation = sim.getObject(
+    "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5"
+)
+rightWristFlex = sim.getObject(
+    "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5/rightLink5/rightJoint6"
 )
 
 print("Entering Try Block")
@@ -204,13 +233,15 @@ try:
             pose_data["ShoulderL"] = landmark_to_pos_vec(wl[LEFT_SHOULDER])
             pose_data["HipR"] = landmark_to_pos_vec(wl[RIGHT_HIP])
             pose_data["HipL"] = landmark_to_pos_vec(wl[LEFT_HIP])
-            human_smallFingy = landmark_to_pos_vec(wl[RIGHT_SMALL_FINGY])
-            human_bigFingy = landmark_to_pos_vec(wl[RIGHT_BIG_FINGY])
-            pose_data["Hand"] = midpoint(human_smallFingy, human_bigFingy)
+            # human_smallFingy = landmark_to_pos_vec(wl[RIGHT_SMALL_FINGY])
+            # human_bigFingy = landmark_to_pos_vec(wl[RIGHT_BIG_FINGY])
+            # pose_data["Hand"] = midpoint(human_smallFingy, human_bigFingy)
+            pose_data["Hand"] = landmark_to_pos_vec(wl[RIGHT_BIG_FINGY])
             pose_data["Elbow"] = landmark_to_pos_vec(wl[RIGHT_ELBOW])
             pose_data["Wrist"] = landmark_to_pos_vec(wl[RIGHT_WRIST])
 
             angles = calc_joint_angles_from_data_dict(pose_data)
+            print(angles["wrist_deviation"])
 
             sim.setJointTargetPosition(
                 rightShoulderAbduct,
@@ -223,6 +254,15 @@ try:
             sim.setJointTargetPosition(
                 rightElbowFlex, (90 - angles["elbow_flexion"]) * DEGREES_TO_RADIANS
             )
+
+            sim.setJointTargetPosition(
+                rightWristDeviation, (angles["wrist_deviation"]) * DEGREES_TO_RADIANS
+            )
+
+            sim.setJointTargetPosition(
+                rightWristFlex, (90 - angles["wrist_flexion"]) * DEGREES_TO_RADIANS
+            )
+            # rightWristFlex
             # sim.setJointTargetPosition(rightElbowFlex, (-30) * DEGREES_TO_RADIANS)
 
         sim.step()
