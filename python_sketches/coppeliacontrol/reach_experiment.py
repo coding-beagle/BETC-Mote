@@ -51,56 +51,42 @@ C_PANEL_BG = (22, 22, 28, 200)  # semi-transparent (needs Surface)
 # Hemisphere sampler
 # ─────────────────────────────────────────────────────────────────────────────
 def sample_hemisphere_positions(
-    shoulder: List[float],
-    arm_length: float,
-    n: int,
-    min_reach: float = 0.4,  # fraction of arm_length (avoid singularities near shoulder)
-    max_reach: float = 0.85,  # fraction of arm_length (leave margin before full extension)
-    min_elevation: float = -20.0,  # degrees below horizontal (allow slightly downward)
-    max_elevation: float = 80.0,  # degrees above horizontal
-    az_min: float = -70.0,  # azimuth range in degrees relative to robot forward (+X)
-    az_max: float = 70.0,
-    seed: int = None,
-) -> List[List[float]]:
+    shoulder,
+    arm_length,
+    n,
+    min_reach=0.4,
+    max_reach=0.85,
+    min_elevation=-10.0,  # quarter-sphere: shallow floor
+    max_elevation=80.0,  # quarter-sphere: cap before overhead singularity
+    az_min=-45.0,  # quarter-sphere: 90 deg total spread around centre
+    az_max=45.0,
+    az_centre=-90.0,  # degrees in XY plane: 0=+X forward, -90=-Y (right arm side)
+    seed=None,
+):
     """
-    Return n positions sampled uniformly inside a reachable hemisphere shell.
+    Return n world positions sampled inside a reachable quarter-sphere shell.
 
-    The hemisphere is centred on  and opens toward +X (robot forward).
-    Elevation and azimuth limits keep targets in front of and reachable by the arm.
-
-    Parameters
-    ----------
-    shoulder    : [x, y, z] world position of the shoulder joint
-    arm_length  : total arm length in metres (used to scale reach bounds)
-    n           : number of positions to generate
-    min_reach   : closest target as a fraction of arm_length
-    max_reach   : furthest target as a fraction of arm_length
-    min_elevation / max_elevation : vertical angle range in degrees
-    az_min / az_max               : horizontal angle range in degrees
-    seed        : optional RNG seed for reproducibility
+    az_centre rotates the opening direction in the XY plane.
+    az_min / az_max are spread angles in degrees around that centre.
+    Defaults give a quarter-sphere opening toward -Y (right arm side on YuMi).
     """
     rng = random.Random(seed)
     positions = []
     r_min = arm_length * min_reach
     r_max = arm_length * max_reach
-
     el_lo = math.radians(min_elevation)
     el_hi = math.radians(max_elevation)
-    az_lo = math.radians(az_min)
-    az_hi = math.radians(az_max)
-
+    centre_rad = math.radians(az_centre)
+    az_lo = centre_rad + math.radians(az_min)
+    az_hi = centre_rad + math.radians(az_max)
     while len(positions) < n:
-        # uniform in elevation (not uniform on sphere, but fine for this use-case)
         el = rng.uniform(el_lo, el_hi)
         az = rng.uniform(az_lo, az_hi)
         r = rng.uniform(r_min, r_max)
-
-        # spherical -> cartesian  (elevation from XY plane, azimuth around Z)
         x = shoulder[0] + r * math.cos(el) * math.cos(az)
         y = shoulder[1] + r * math.cos(el) * math.sin(az)
         z = shoulder[2] + r * math.sin(el)
         positions.append([x, y, z])
-
     return positions
 
 
@@ -134,10 +120,11 @@ class ReachTarget:
     _elapsed: float = field(default=0.0, init=False, repr=False)
     _dwell_acc: float = field(default=0.0, init=False, repr=False)
     _inside: bool = field(default=False, init=False, repr=False)
-    _result: Optional[str] = field(
-        default=None, init=False, repr=False
-    )  # 'success'|'timeout'
+    _result: Optional[str] = field(default=None, init=False, repr=False)
     _flash_t: float = field(default=0.0, init=False, repr=False)
+    _started: bool = field(default=False, init=False, repr=False)
+    _start_wrist: Optional[List[float]] = field(default=None, init=False, repr=False)
+    MOVE_THRESHOLD: float = field(default=0.01, init=False, repr=False)  # metres
 
     def __post_init__(self):
         self._spawn_dummy()
@@ -191,6 +178,22 @@ class ReachTarget:
         if self._result is not None:
             return self._result
 
+        # Latch first movement: timer doesn't start until the wrist moves
+        if not self._started:
+            if self._start_wrist is None:
+                self._start_wrist = list(wrist_pos)
+            moved = math.sqrt(
+                sum((wrist_pos[i] - self._start_wrist[i]) ** 2 for i in range(3))
+            )
+            if moved >= self.MOVE_THRESHOLD:
+                self._started = True
+            # don't accumulate elapsed until started
+            dist = math.sqrt(
+                sum((wrist_pos[i] - self.position[i]) ** 2 for i in range(3))
+            )
+            self._inside = dist <= self.radius
+            return None  # no timeout possible yet
+
         self._elapsed += dt
 
         dist = math.sqrt(sum((wrist_pos[i] - self.position[i]) ** 2 for i in range(3)))
@@ -225,6 +228,8 @@ class ReachTarget:
     def time_remaining(self) -> float:
         if self.timeout <= 0:
             return float("inf")
+        if not self._started:
+            return self.timeout  # show full time while waiting for first move
         return max(0.0, self.timeout - self._elapsed)
 
     @property
@@ -311,9 +316,12 @@ class ReachTarget:
 
         # ── timer ─────────────────────────────────────────────────────────────
         if self.timeout > 0:
-            tr = self.time_remaining
-            t_col = C_FAIL if tr < 3.0 else C_TEXT_DIM
-            t_txt = fonts["sm"].render(f"time  {tr:.1f}s", True, t_col)
+            if not self._started:
+                t_txt = fonts["sm"].render("move to start timer", True, (160, 140, 60))
+            else:
+                tr = self.time_remaining
+                t_col = C_FAIL if tr < 3.0 else C_TEXT_DIM
+                t_txt = fonts["sm"].render(f"time  {tr:.1f}s", True, t_col)
             surf.blit(t_txt, (px + 10, py + 68 + 20))
 
 
@@ -370,8 +378,9 @@ class Experiment:
         max_reach: float = 0.85,
         min_elevation: float = -20.0,
         max_elevation: float = 60.0,
-        az_min: float = -70.0,
-        az_max: float = 70.0,
+        az_min: float = -45.0,  # quarter-sphere spread
+        az_max: float = 45.0,
+        az_centre: float = -90.0,  # -90 opens toward -Y (right arm side)
     ) -> "Experiment":
         """
         Convenience constructor: generates n_trials random reachable targets.
@@ -392,6 +401,7 @@ class Experiment:
             max_elevation=max_elevation,
             az_min=az_min,
             az_max=az_max,
+            az_centre=az_centre,
             seed=seed,
         )
         trials = [

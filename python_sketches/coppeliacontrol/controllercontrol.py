@@ -17,6 +17,7 @@ TRIGGER_THRESHOLD = 0.1
 DEADZONE = 0.1
 MODE_BUTTON = 5  # RB
 RESET_BUTTON = 1  # B
+RESYNC_BUTTON = 3  # Y – snap controller target to current wrist position
 
 COL_POSITION = (100, 220, 100)
 COL_ROTATION = (220, 160, 60)
@@ -50,12 +51,12 @@ EXP_N_TRIALS = 6  # number of targets
 EXP_RADIUS = 0.05  # success zone radius in metres
 EXP_DWELL_TIME = 0.5  # seconds to hold inside zone
 EXP_TIMEOUT = 20.0  # seconds per trial before fail
-EXP_MIN_REACH = 0.40  # nearest target (fraction of arm length)
-EXP_MAX_REACH = 0.85  # furthest target (fraction of arm length)
-EXP_MIN_ELEVATION = -15.0  # degrees – allow slightly below horizontal
+EXP_MIN_REACH = 0.7  # nearest target (fraction of arm length)
+EXP_MAX_REACH = 1.20  # furthest target (fraction of arm length)
+EXP_MIN_ELEVATION = -45.0  # degrees – allow slightly below horizontal
 EXP_MAX_ELEVATION = 60.0  # degrees – cap well before overhead singularity
-EXP_AZ_MIN = -65.0  # degrees – left of robot forward axis
-EXP_AZ_MAX = 65.0  # degrees – right of robot forward axis
+EXP_AZ_MIN = 0.0  # degrees – quarter-sphere spread around centre
+EXP_AZ_MAX = 90.0  # degrees
 EXP_SEED = None  # set an int for reproducible target placement
 
 
@@ -252,6 +253,7 @@ try:
 
     running = True
     gripper_open = False
+    wrist_pos = list(target_pos)  # initialise; updated each step
 
     while running:
         dt = clock.get_time() / 1000.0  # seconds since last frame
@@ -281,6 +283,7 @@ try:
 
         rotation_mode = joystick.get_button(MODE_BUTTON)
         reset_rot = joystick.get_button(RESET_BUTTON)
+        resync = joystick.get_button(RESYNC_BUTTON)
 
         num_buttons = joystick.get_numbuttons()
         button_states = [joystick.get_button(i) for i in range(num_buttons)]
@@ -292,6 +295,10 @@ try:
         elif rt > TRIGGER_THRESHOLD:
             sim.setInt32Signal(GRIPPER_SIGNAL, 0)
             gripper_open = True
+
+        # ── resync: snap target to actual wrist position ─────────────────────────
+        if resync and not rotation_mode:
+            target_pos = list(wrist_pos)
 
         # ── position mode ─────────────────────────────────────────────────────
         if not rotation_mode:
