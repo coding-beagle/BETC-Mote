@@ -50,7 +50,10 @@ def load_csv(path: Path) -> pd.DataFrame:
 
 
 def compute_speeds(df: pd.DataFrame) -> np.ndarray:
-    """Return per-trial average speed (units/s) starting from trial 2."""
+    """Return within-run speeds (units/s): displacement / duration for each
+    consecutive pair of targets. The first trial of each run is dropped since
+    there is no prior position to diff against — cross-run boundaries are
+    never included."""
     pos = df[["target_x", "target_y", "target_z"]].values
     displacements = np.linalg.norm(np.diff(pos, axis=0), axis=1)
     durations = df["duration_s"].values[1:]
@@ -70,9 +73,11 @@ def anova_summary(groups: list, metric: str) -> str:
 def plot_overview(datasets: list):
     """
     datasets: list of (name, df, color)
-    Shows a two-panel figure with a Toggle button to switch between:
-      • Split  — each experiment plotted separately, colour-coded
-      • Combined — all data merged into one distribution / one speed line
+    Both panels are normal distributions:
+      Left:  distribution of run durations
+      Right: distribution of within-run speeds
+                (cross-run boundaries are never included)
+    Toggle button switches between per-experiment overlays and combined view.
     """
     from matplotlib.widgets import Button
 
@@ -82,28 +87,18 @@ def plot_overview(datasets: list):
     exp_data = []
     for name, df, color in datasets:
         durations = df["duration_s"].values
-        speeds = compute_speeds(df)
-        trials = df["trial"].values[1:]
+        speeds = compute_speeds(df)  # within-run only; first trial dropped
         exp_data.append(
-            dict(
-                name=name,
-                color=color,
-                durations=durations,
-                speeds=speeds,
-                trials=trials,
-            )
+            dict(name=name, color=color, durations=durations, speeds=speeds)
         )
 
-    # Pre-compute combined data
+    # Pre-compute combined pools (safe to concatenate — within-run only)
     all_durations = np.concatenate([e["durations"] for e in exp_data])
     all_speeds = np.concatenate([e["speeds"] for e in exp_data])
-    # Re-index trials sequentially across all experiments
-    all_trials = np.arange(1, len(all_speeds) + 1)
 
     state = {"combined": False}
 
     fig = plt.figure(figsize=(14, 7))
-    # Leave bottom margin for the button
     fig.subplots_adjust(left=0.07, right=0.97, top=0.91, bottom=0.18, wspace=0.35)
 
     ax1 = fig.add_subplot(1, 2, 1)
@@ -116,50 +111,47 @@ def plot_overview(datasets: list):
     btn = Button(ax_btn, "Switch to: Combined", color="#E8EDF7", hovercolor="#C8D4F0")
     btn.label.set_fontsize(10)
 
+    def _draw_normal(ax, data, color, label, add_hist=False):
+        """Plot a normal distribution curve (+ optional histogram) on ax."""
+        mu, sigma = data.mean(), data.std()
+        x = np.linspace(max(0, data.min() - data.std()), data.max() + data.std(), 300)
+        if add_hist:
+            ax.hist(
+                data,
+                bins=max(6, len(data) // 3),
+                density=True,
+                color=color,
+                alpha=0.25,
+                edgecolor="white",
+                linewidth=0.8,
+            )
+        ax.plot(
+            x,
+            stats.norm.pdf(x, mu, sigma),
+            color=color,
+            linewidth=2.2,
+            label=f"{label}  μ={mu:.3f}  σ={sigma:.3f}",
+        )
+        ax.axvline(mu, color=color, linestyle=":", linewidth=1.2, alpha=0.6)
+
+    def _style(a, xlabel, title):
+        a.set_xlabel(xlabel, fontsize=11)
+        a.set_ylabel("Probability Density", fontsize=11)
+        a.set_title(title, fontsize=12, fontweight="bold")
+        a.legend(fontsize=9)
+        a.grid(axis="y", linestyle="--", alpha=0.4)
+        a.spines[["top", "right"]].set_visible(False)
+
     def draw_split():
         ax1.cla()
         ax2.cla()
         ax1.set_facecolor(BG)
         ax2.set_facecolor(BG)
-
-        all_trial_nums = []
         for e in exp_data:
-            mu, sigma = e["durations"].mean(), e["durations"].std()
-            x = np.linspace(
-                max(0, e["durations"].min() - 1), e["durations"].max() + 1, 300
-            )
-            ax1.plot(
-                x,
-                stats.norm.pdf(x, mu, sigma),
-                color=e["color"],
-                linewidth=2.2,
-                label=f"{e['name']}  μ={mu:.2f}s  σ={sigma:.2f}s",
-            )
-            ax1.axvline(mu, color=e["color"], linestyle=":", linewidth=1.2, alpha=0.6)
-
-            ax2.plot(
-                e["trials"],
-                e["speeds"],
-                color=e["color"],
-                linewidth=2.2,
-                marker="o",
-                markersize=7,
-                markerfacecolor="white",
-                markeredgecolor=e["color"],
-                markeredgewidth=2,
-                zorder=3,
-                label=f"{e['name']}  μ={e['speeds'].mean():.3f} u/s",
-            )
-            ax2.axhline(
-                e["speeds"].mean(),
-                color=e["color"],
-                linestyle="--",
-                linewidth=1.2,
-                alpha=0.5,
-            )
-            all_trial_nums.extend(e["trials"].tolist())
-
-        _style_axes(ax1, ax2, sorted(set(all_trial_nums)))
+            _draw_normal(ax1, e["durations"], e["color"], e["name"])
+            _draw_normal(ax2, e["speeds"], e["color"], e["name"])
+        _style(ax1, "Duration (s)", "Distribution of Run Durations")
+        _style(ax2, "Speed (units / s)", "Distribution of Within-Run Speeds")
         fig.suptitle(
             "Robot Arm Experiments — Per Experiment", fontsize=14, fontweight="bold"
         )
@@ -169,70 +161,11 @@ def plot_overview(datasets: list):
         ax2.cla()
         ax1.set_facecolor(BG)
         ax2.set_facecolor(BG)
-
-        mu, sigma = all_durations.mean(), all_durations.std()
-        x = np.linspace(max(0, all_durations.min() - 1), all_durations.max() + 1, 300)
-        ax1.hist(
-            all_durations,
-            bins=max(6, len(all_durations) // 3),
-            density=True,
-            color=COMBINED_COLOR,
-            alpha=0.3,
-            edgecolor="white",
-            linewidth=0.8,
-        )
-        ax1.plot(
-            x,
-            stats.norm.pdf(x, mu, sigma),
-            color=COMBINED_COLOR,
-            linewidth=2.5,
-            label=f"All trials  μ={mu:.2f}s  σ={sigma:.2f}s",
-        )
-        ax1.axvline(mu, color=COMBINED_COLOR, linestyle="--", linewidth=1.4, alpha=0.8)
-
-        ax2.plot(
-            all_trials,
-            all_speeds,
-            color=COMBINED_COLOR,
-            linewidth=2.2,
-            marker="o",
-            markersize=6,
-            markerfacecolor="white",
-            markeredgecolor=COMBINED_COLOR,
-            markeredgewidth=2,
-            zorder=3,
-            label=f"All trials  μ={all_speeds.mean():.3f} u/s",
-        )
-        ax2.axhline(
-            all_speeds.mean(),
-            color=COMBINED_COLOR,
-            linestyle="--",
-            linewidth=1.4,
-            alpha=0.6,
-        )
-
-        _style_axes(ax1, ax2, all_trials.tolist())
+        _draw_normal(ax1, all_durations, COMBINED_COLOR, "All trials", add_hist=True)
+        _draw_normal(ax2, all_speeds, COMBINED_COLOR, "All trials", add_hist=True)
+        _style(ax1, "Duration (s)", "Distribution of Run Durations")
+        _style(ax2, "Speed (units / s)", "Distribution of Within-Run Speeds")
         fig.suptitle("Robot Arm Experiments — Combined", fontsize=14, fontweight="bold")
-
-    def _style_axes(a1, a2, trial_list):
-        a1.set_xlabel("Duration (s)", fontsize=11)
-        a1.set_ylabel("Probability Density", fontsize=11)
-        a1.set_title("Distribution of Run Durations", fontsize=12, fontweight="bold")
-        a1.legend(fontsize=9)
-        a1.grid(axis="y", linestyle="--", alpha=0.4)
-        a1.spines[["top", "right"]].set_visible(False)
-
-        # Only tick every other trial if there are many
-        ticks = trial_list if len(trial_list) <= 15 else trial_list[::2]
-        a2.set_xticks(ticks)
-        a2.set_xlabel("Trial", fontsize=11)
-        a2.set_ylabel("Average Speed (units / s)", fontsize=11)
-        a2.set_title(
-            "Average Speed Between Consecutive Targets", fontsize=12, fontweight="bold"
-        )
-        a2.legend(fontsize=9)
-        a2.grid(axis="y", linestyle="--", alpha=0.4)
-        a2.spines[["top", "right"]].set_visible(False)
 
     def on_toggle(event):
         state["combined"] = not state["combined"]
@@ -245,8 +178,6 @@ def plot_overview(datasets: list):
         fig.canvas.draw_idle()
 
     btn.on_clicked(on_toggle)
-
-    # Initial draw
     draw_split()
     fig.canvas.draw_idle()
 
@@ -328,8 +259,8 @@ def plot_comparison(datasets: list):
         patch.set_facecolor(col)
         patch.set_alpha(0.6)
     ax_sb.set_xticklabels(names, rotation=15, ha="right", fontsize=9)
-    ax_sb.set_ylabel("Average Speed (units / s)", fontsize=11)
-    ax_sb.set_title("Speed Box-Plot", fontsize=12, fontweight="bold")
+    ax_sb.set_ylabel("Within-Run Speed (units / s)", fontsize=11)
+    ax_sb.set_title("Within-Run Speed Box-Plot", fontsize=12, fontweight="bold")
     ax_sb.grid(axis="y", linestyle="--", alpha=0.4)
     ax_sb.spines[["top", "right"]].set_visible(False)
     anova_spd = anova_summary(speed_groups, "Speed")
