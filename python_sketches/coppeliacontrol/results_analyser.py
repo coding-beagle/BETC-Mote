@@ -83,42 +83,103 @@ def plot_overview(datasets: list):
 
     COMBINED_COLOR = "#4C72B0"
 
-    # Pre-compute per-experiment data
+    # Pre-compute per-experiment data — skip any experiment with fewer than
+    # 2 successful trials (can't compute even one speed value)
     exp_data = []
     for name, df, color in datasets:
         durations = df["duration_s"].values
-        speeds = compute_speeds(df)  # within-run only; first trial dropped
+        if len(df) < 2:
+            print(
+                f"  ⚠  {name}: only {len(df)} successful trial(s) — "
+                f"skipping speed computation for this file"
+            )
+            speeds = np.array([])
+        else:
+            speeds = compute_speeds(df)  # within-run only; first trial dropped
         exp_data.append(
             dict(name=name, color=color, durations=durations, speeds=speeds)
         )
 
     # Pre-compute combined pools (safe to concatenate — within-run only)
     all_durations = np.concatenate([e["durations"] for e in exp_data])
-    all_speeds = np.concatenate([e["speeds"] for e in exp_data])
+    valid_speeds = [e["speeds"] for e in exp_data if len(e["speeds"]) > 0]
+    all_speeds = np.concatenate(valid_speeds) if valid_speeds else np.array([])
 
-    state = {"combined": False}
+    state = {"combined": False, "standardised": False, "skip_first_move": False}
+
+    n_exp = len(exp_data)
+    # Scale bottom margin so legends + buttons never overlap the plot area
+    bottom_margin = min(0.08 + n_exp * 0.028, 0.45)
 
     fig = plt.figure(figsize=(14, 7))
-    fig.subplots_adjust(left=0.07, right=0.97, top=0.91, bottom=0.18, wspace=0.35)
+    fig.subplots_adjust(
+        left=0.07, right=0.97, top=0.91, bottom=bottom_margin, wspace=0.35
+    )
 
     ax1 = fig.add_subplot(1, 2, 1)
     ax2 = fig.add_subplot(1, 2, 2)
     ax1.set_facecolor(BG)
     ax2.set_facecolor(BG)
 
-    # ── Button ──
-    ax_btn = fig.add_axes([0.42, 0.04, 0.16, 0.07])
-    btn = Button(ax_btn, "Switch to: Combined", color="#E8EDF7", hovercolor="#C8D4F0")
-    btn.label.set_fontsize(10)
+    # ── Buttons — placed well below the plot area ──
+    btn_y = bottom_margin * 0.18
+    btn_height = min(0.06, bottom_margin * 0.35)
+    ax_btn_mode = fig.add_axes([0.15, btn_y, 0.20, btn_height])
+    ax_btn_std = fig.add_axes([0.40, btn_y, 0.20, btn_height])
+    ax_btn_skip = fig.add_axes([0.65, btn_y, 0.20, btn_height])
+    btn_mode = Button(
+        ax_btn_mode, "Switch to: Combined", color="#E8EDF7", hovercolor="#C8D4F0"
+    )
+    btn_std = Button(
+        ax_btn_std, "Standardise: Off", color="#F0EDE8", hovercolor="#DDD5C8"
+    )
+    btn_skip = Button(
+        ax_btn_skip, "Skip 1st Move: Off", color="#F0EDE8", hovercolor="#DDD5C8"
+    )
+    btn_mode.label.set_fontsize(10)
+    btn_std.label.set_fontsize(10)
+    btn_skip.label.set_fontsize(10)
+    # Keep strong references so Python doesn't garbage collect the Button
+    # objects (which would silently disconnect click callbacks)
+    fig._buttons = [btn_mode, btn_std, btn_skip]
+
+    def _maybe_standardise(data):
+        """Return (plot_data, mu, sigma).
+        If standardised, returns z-scores; original mu/sigma always returned
+        for the legend so the user still sees real units.
+        If sigma == 0 (single point or all-identical values), standardisation
+        is skipped and the raw data is returned."""
+        mu, sigma = data.mean(), data.std()
+        if state["standardised"] and sigma > 0:
+            return (data - mu) / sigma, mu, sigma
+        return data, mu, sigma
 
     def _draw_normal(ax, data, color, label, add_hist=False):
-        """Plot a normal distribution curve (+ optional histogram) on ax."""
-        mu, sigma = data.mean(), data.std()
-        x = np.linspace(max(0, data.min() - data.std()), data.max() + data.std(), 300)
+        """Plot a fitted normal curve (+ optional histogram) on ax,
+        applying standardisation if active.
+        Silently skips if data is empty or has zero variance."""
+        if data is None or len(data) == 0:
+            return
+        plot_data, mu, sigma = _maybe_standardise(data)
+        p_mu = plot_data.mean()
+        p_sigma = plot_data.std()
+        if p_sigma == 0 or not np.isfinite(p_sigma):
+            # Can't fit a normal — just draw a vertical line at the single value
+            ax.axvline(
+                p_mu,
+                color=color,
+                linewidth=2.2,
+                linestyle="--",
+                label=f"{label}  μ={mu:.3f}  (n=1, no spread)",
+            )
+            return
+        pad = max(p_sigma * 2, abs(p_mu) * 0.1, 1e-6)
+        x = np.linspace(p_mu - pad * 3, p_mu + pad * 3, 300)
         if add_hist:
+            bins = max(6, len(plot_data) // 3)
             ax.hist(
-                data,
-                bins=max(6, len(data) // 3),
+                plot_data,
+                bins=bins,
                 density=True,
                 color=color,
                 alpha=0.25,
@@ -127,59 +188,105 @@ def plot_overview(datasets: list):
             )
         ax.plot(
             x,
-            stats.norm.pdf(x, mu, sigma),
+            stats.norm.pdf(x, p_mu, p_sigma),
             color=color,
             linewidth=2.2,
             label=f"{label}  μ={mu:.3f}  σ={sigma:.3f}",
         )
-        ax.axvline(mu, color=color, linestyle=":", linewidth=1.2, alpha=0.6)
+        ax.axvline(p_mu, color=color, linestyle=":", linewidth=1.2, alpha=0.6)
 
     def _style(a, xlabel, title):
+        if state["standardised"]:
+            xlabel = f"{xlabel}  [z-score]"
         a.set_xlabel(xlabel, fontsize=11)
         a.set_ylabel("Probability Density", fontsize=11)
         a.set_title(title, fontsize=12, fontweight="bold")
-        a.legend(fontsize=9)
+        # Place legend below axes so it never covers buttons regardless of count
+        a.legend(
+            fontsize=9,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.18),
+            ncol=max(1, min(3, n_exp // 2 + 1)),
+            frameon=True,
+            framealpha=0.9,
+        )
         a.grid(axis="y", linestyle="--", alpha=0.4)
         a.spines[["top", "right"]].set_visible(False)
 
-    def draw_split():
+    def _active_speeds(speeds):
+        """Return speeds with the first movement optionally removed."""
+        if state["skip_first_move"] and len(speeds) > 1:
+            return speeds[1:]
+        return speeds
+
+    def redraw():
         ax1.cla()
         ax2.cla()
         ax1.set_facecolor(BG)
         ax2.set_facecolor(BG)
-        for e in exp_data:
-            _draw_normal(ax1, e["durations"], e["color"], e["name"])
-            _draw_normal(ax2, e["speeds"], e["color"], e["name"])
-        _style(ax1, "Duration (s)", "Distribution of Run Durations")
-        _style(ax2, "Speed (units / s)", "Distribution of Within-Run Speeds")
-        fig.suptitle(
-            "Robot Arm Experiments — Per Experiment", fontsize=14, fontweight="bold"
-        )
-
-    def draw_combined():
-        ax1.cla()
-        ax2.cla()
-        ax1.set_facecolor(BG)
-        ax2.set_facecolor(BG)
-        _draw_normal(ax1, all_durations, COMBINED_COLOR, "All trials", add_hist=True)
-        _draw_normal(ax2, all_speeds, COMBINED_COLOR, "All trials", add_hist=True)
-        _style(ax1, "Duration (s)", "Distribution of Run Durations")
-        _style(ax2, "Speed (units / s)", "Distribution of Within-Run Speeds")
-        fig.suptitle("Robot Arm Experiments — Combined", fontsize=14, fontweight="bold")
-
-    def on_toggle(event):
-        state["combined"] = not state["combined"]
         if state["combined"]:
-            draw_combined()
-            btn.label.set_text("Switch to: Per Experiment")
+            # Recompute combined pool respecting skip_first_move
+            spd_pool = [
+                _active_speeds(e["speeds"]) for e in exp_data if len(e["speeds"]) > 0
+            ]
+            combined_spd = np.concatenate(spd_pool) if spd_pool else np.array([])
+            _draw_normal(
+                ax1, all_durations, COMBINED_COLOR, "All trials", add_hist=True
+            )
+            _draw_normal(ax2, combined_spd, COMBINED_COLOR, "All trials", add_hist=True)
+            subtitle = "Combined"
         else:
-            draw_split()
-            btn.label.set_text("Switch to: Combined")
+            for e in exp_data:
+                _draw_normal(ax1, e["durations"], e["color"], e["name"])
+                _draw_normal(ax2, _active_speeds(e["speeds"]), e["color"], e["name"])
+            subtitle = "Per Experiment"
+        _style(ax1, "Duration (s)", "Distribution of Run Durations")
+        spd_xlabel = "Speed (units / s)"
+        if state["skip_first_move"]:
+            spd_xlabel += "  [1st move excluded]"
+        _style(ax2, spd_xlabel, "Distribution of Within-Run Speeds")
+        tags = []
+        if state["standardised"]:
+            tags.append("standardised")
+        if state["skip_first_move"]:
+            tags.append("1st move excluded")
+        tag_str = f"  [{', '.join(tags)}]" if tags else ""
+        fig.suptitle(
+            f"Robot Arm Experiments — {subtitle}{tag_str}",
+            fontsize=14,
+            fontweight="bold",
+        )
         fig.canvas.draw_idle()
 
-    btn.on_clicked(on_toggle)
-    draw_split()
-    fig.canvas.draw_idle()
+    def on_toggle_mode(event):
+        state["combined"] = not state["combined"]
+        btn_mode.label.set_text(
+            "Switch to: Per Experiment" if state["combined"] else "Switch to: Combined"
+        )
+        redraw()
+
+    def on_toggle_std(event):
+        state["standardised"] = not state["standardised"]
+        btn_std.label.set_text(
+            "Standardise: On" if state["standardised"] else "Standardise: Off"
+        )
+        btn_std.color = "#D8F0D8" if state["standardised"] else "#F0EDE8"
+        btn_std.hovercolor = "#B8E0B8" if state["standardised"] else "#DDD5C8"
+        redraw()
+
+    def on_toggle_skip(event):
+        state["skip_first_move"] = not state["skip_first_move"]
+        btn_skip.label.set_text(
+            "Skip 1st Move: On" if state["skip_first_move"] else "Skip 1st Move: Off"
+        )
+        btn_skip.color = "#D8F0D8" if state["skip_first_move"] else "#F0EDE8"
+        btn_skip.hovercolor = "#B8E0B8" if state["skip_first_move"] else "#DDD5C8"
+        redraw()
+
+    btn_mode.on_clicked(on_toggle_mode)
+    btn_std.on_clicked(on_toggle_std)
+    btn_skip.on_clicked(on_toggle_skip)
+    redraw()
 
 
 # ── Multi-file comparison figure ──────────────────────────────────────────────
