@@ -292,8 +292,9 @@ try:
                 (angles["shoulder_flexion"] - 90) * DEGREES_TO_RADIANS,
             )
             sim.setJointTargetPosition(
-                rightForearmRoll, (angles["roll"] - 90) * DEGREES_TO_RADIANS
+                rightForearmRoll, (-angles["roll"] - 90) * DEGREES_TO_RADIANS
             )
+            # sim.setJointTargetPosition(rightForearmRoll, (90) * DEGREES_TO_RADIANS)
 
             sim.setJointTargetPosition(
                 rightShoulderAbduct,
