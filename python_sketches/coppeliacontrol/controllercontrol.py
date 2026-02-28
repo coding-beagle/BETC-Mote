@@ -3,6 +3,9 @@ import pygame
 import numpy as np
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
+# ── NEW: import experiment module ─────────────────────────────────────────────
+from reach_experiment import Experiment
+
 # ── constants ────────────────────────────────────────────────────────────────
 ROBOT_ARM_LENGTH = 0.21492 + 0.24129
 
@@ -20,20 +23,17 @@ COL_ROTATION = (220, 160, 60)
 
 # ── display layout ────────────────────────────────────────────────────────────
 W, H = 700, 420
-STICK_R = 50  # radius of stick gate circle
-STICK_DOT_R = 8  # radius of stick position dot
+STICK_R = 50
+STICK_DOT_R = 8
 TRIG_W = 30
 TRIG_H = 80
 
-# Stick centre positions  (x, y)
 LS_CX, LS_CY = 140, 260
 RS_CX, RS_CY = 370, 260
 
-# Trigger positions  (top-left x, y)
 LT_X, LT_Y = 55, 60
 RT_X, RT_Y = 610, 60
 
-# Button positions  {index: (cx, cy, label)}
 BUTTON_LAYOUT = {
     0: (580, 200, "A"),
     1: (605, 175, "B"),
@@ -42,6 +42,21 @@ BUTTON_LAYOUT = {
     4: (120, 110, "LB"),
     5: (580, 110, "RB"),
 }
+
+# ── NEW: experiment configuration ────────────────────────────────────────────
+# Targets are placed randomly on a reachable hemisphere centred on the shoulder.
+# Tune these values to match your robot and desired difficulty.
+EXP_N_TRIALS = 6  # number of targets
+EXP_RADIUS = 0.05  # success zone radius in metres
+EXP_DWELL_TIME = 0.5  # seconds to hold inside zone
+EXP_TIMEOUT = 20.0  # seconds per trial before fail
+EXP_MIN_REACH = 0.40  # nearest target (fraction of arm length)
+EXP_MAX_REACH = 0.85  # furthest target (fraction of arm length)
+EXP_MIN_ELEVATION = -15.0  # degrees – allow slightly below horizontal
+EXP_MAX_ELEVATION = 60.0  # degrees – cap well before overhead singularity
+EXP_AZ_MIN = -65.0  # degrees – left of robot forward axis
+EXP_AZ_MAX = 65.0  # degrees – right of robot forward axis
+EXP_SEED = None  # set an int for reproducible target placement
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -95,24 +110,18 @@ def normalise_quaternion(q):
 
 # ── drawing helpers ───────────────────────────────────────────────────────────
 def draw_stick(surf, cx, cy, ax, ay, label, active_col):
-    """Draw a stick gate, dot, and cross-hair."""
-    # Gate
     pygame.draw.circle(surf, (70, 70, 70), (cx, cy), STICK_R, 2)
-    # Cross-hair
     pygame.draw.line(surf, (50, 50, 50), (cx - STICK_R, cy), (cx + STICK_R, cy), 1)
     pygame.draw.line(surf, (50, 50, 50), (cx, cy - STICK_R), (cx, cy + STICK_R), 1)
-    # Dot
     dot_x = int(cx + ax * STICK_R)
     dot_y = int(cy + ay * STICK_R)
     pygame.draw.circle(surf, active_col, (dot_x, dot_y), STICK_DOT_R)
     pygame.draw.circle(surf, (255, 255, 255), (dot_x, dot_y), STICK_DOT_R, 1)
-    # Label
     lbl = pygame.font.SysFont("monospace", 13).render(label, True, (160, 160, 160))
     surf.blit(lbl, (cx - lbl.get_width() // 2, cy + STICK_R + 6))
 
 
 def draw_trigger(surf, tx, ty, value, label, active_col):
-    """Draw a vertical trigger bar."""
     pygame.draw.rect(surf, (60, 60, 60), (tx, ty, TRIG_W, TRIG_H), 2)
     fill_h = int(TRIG_H * value)
     if fill_h > 0:
@@ -133,14 +142,6 @@ def draw_button(surf, cx, cy, label, pressed):
         label, True, col_text
     )
     surf.blit(lbl, (cx - lbl.get_width() // 2, cy - lbl.get_height() // 2))
-
-
-def draw_gamepad_body(surf):
-    """Draw a simple controller silhouette."""
-    pygame.draw.ellipse(surf, (45, 45, 45), (60, 140, 580, 240))
-    # Grip bumps
-    pygame.draw.ellipse(surf, (45, 45, 45), (50, 310, 160, 100))
-    pygame.draw.ellipse(surf, (45, 45, 45), (490, 310, 160, 100))
 
 
 # ── CoppeliaSim setup ─────────────────────────────────────────────────────────
@@ -215,6 +216,9 @@ font_md = pygame.font.SysFont("monospace", 15)
 font_lg = pygame.font.SysFont("monospace", 17, bold=True)
 clock = pygame.time.Clock()
 
+# fonts dict passed to experiment draw calls
+fonts = {"sm": font_sm, "md": font_md, "lg": font_lg}
+
 try:
     print("Starting simulation...")
     sim.setStepping(True)
@@ -222,10 +226,36 @@ try:
     sim.setInt32Signal(GRIPPER_SIGNAL, 1)
     print("Simulation started OK")
 
+    # ── NEW: create experiment after sim starts ─────────────────────────────────
+    # Targets are sampled randomly on the reachable hemisphere around the shoulder.
+    experiment = Experiment.from_hemisphere(
+        sim,
+        shoulder_pos=robot_shoulder_world,
+        arm_length=ROBOT_ARM_LENGTH,
+        n_trials=EXP_N_TRIALS,
+        radius=EXP_RADIUS,
+        dwell_time=EXP_DWELL_TIME,
+        timeout=EXP_TIMEOUT,
+        min_reach=EXP_MIN_REACH,
+        max_reach=EXP_MAX_REACH,
+        min_elevation=EXP_MIN_ELEVATION,
+        max_elevation=EXP_MAX_ELEVATION,
+        az_min=EXP_AZ_MIN,
+        az_max=EXP_AZ_MAX,
+        seed=EXP_SEED,
+    )
+    print(
+        f"Experiment created — {EXP_N_TRIALS} targets placed on reachable hemisphere."
+    )
+    for i, t in enumerate(experiment._trial_defs):
+        print(f"  {i+1}. {t['pos']}")
+
     running = True
     gripper_open = False
 
     while running:
+        dt = clock.get_time() / 1000.0  # seconds since last frame
+
         # ── events ────────────────────────────────────────────────────────────
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -267,11 +297,7 @@ try:
         if not rotation_mode:
             target_pos = vec_add(
                 target_pos,
-                [
-                    ls_y * MOVE_SPEED,
-                    ls_x * MOVE_SPEED,
-                    -rs_y * MOVE_SPEED,
-                ],
+                [ls_y * MOVE_SPEED, ls_x * MOVE_SPEED, -rs_y * MOVE_SPEED],
             )
             target_pos = vec_clamp_to_sphere(
                 robot_shoulder_world, target_pos, ROBOT_ARM_LENGTH
@@ -302,11 +328,17 @@ try:
 
         sim.step()
 
+        # ── NEW: read actual wrist position and update experiment ─────────────
+        wrist_pos = sim.getObjectPosition(rightWristLink, -1)
+        experiment.update(wrist_pos, dt)
+
+        # print summary to console once when experiment finishes
+        if experiment.finished and not getattr(experiment, "_summary_printed", False):
+            print(experiment.summary())
+            experiment._summary_printed = True
+
         # ── draw ──────────────────────────────────────────────────────────────
         screen.fill((22, 22, 28))
-
-        # Controller body
-        # draw_gamepad_body(screen)
 
         # Mode banner
         mode_label = "[ ROTATION MODE ]" if rotation_mode else "[ POSITION MODE ]"
@@ -319,46 +351,25 @@ try:
         screen.blit(font_lg.render(mode_label, True, mode_col), (10, 8))
         screen.blit(font_sm.render(hint_label, True, (130, 130, 130)), (10, 32))
 
-        # Sticks — colour by mode
         ls_col = COL_ROTATION if rotation_mode else COL_POSITION
         rs_col = COL_ROTATION if rotation_mode else COL_POSITION
-
         ls_label = "pitch / yaw" if rotation_mode else "X / Y pos"
         rs_label = "roll" if rotation_mode else "Z pos"
 
         draw_stick(screen, LS_CX, LS_CY, ls_x_raw, ls_y_raw, ls_label, ls_col)
         draw_stick(screen, RS_CX, RS_CY, rs_x_raw, rs_y_raw, rs_label, rs_col)
 
-        # Triggers
         lt_col = (220, 100, 100) if lt > TRIGGER_THRESHOLD else (100, 160, 220)
         rt_col = (100, 220, 130) if rt > TRIGGER_THRESHOLD else (100, 160, 220)
         draw_trigger(screen, LT_X, LT_Y, lt, "LT close", lt_col)
         draw_trigger(screen, RT_X, RT_Y, rt, "RT open", rt_col)
 
-        # Buttons
         for idx, (bx, by, blabel) in BUTTON_LAYOUT.items():
             pressed = button_states[idx] if idx < num_buttons else False
             draw_button(screen, bx, by, blabel, pressed)
 
-        # Telemetry panel (right side)
-        px, py = 490, 150
-        gripper_label = "OPEN" if gripper_open else "CLOSED"
-        # tele_lines = [
-        #     ("TARGET", None),
-        #     (f" X {target_pos[0]:+.3f}", None),
-        #     (f" Y {target_pos[1]:+.3f}", None),
-        #     (f" Z {target_pos[2]:+.3f}", None),
-        #     ("QUAT", None),
-        #     (f" x {target_quat[0]:+.3f}  y {target_quat[1]:+.3f}", None),
-        #     (f" z {target_quat[2]:+.3f}  w {target_quat[3]:+.3f}", None),
-        #     (
-        #         f"GRIP {gripper_label}",
-        #         (100, 220, 130) if gripper_open else (220, 100, 100),
-        #     ),
-        # ]
-        # for i, (txt, col) in enumerate(tele_lines):
-        #     c = col if col else (190, 190, 190)
-        #     screen.blit(font_sm.render(txt, True, c), (px, py + i * 18))
+        # ── NEW: draw experiment HUD ──────────────────────────────────────────
+        experiment.draw(screen, wrist_pos, fonts, dt)
 
         pygame.display.flip()
         clock.tick(60)

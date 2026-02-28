@@ -27,7 +27,9 @@ Usage (minimal):
 from __future__ import annotations
 import time
 import math
+import random
 import pygame
+import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -43,6 +45,63 @@ C_FAIL = (220, 80, 80)
 C_TEXT_DIM = (130, 130, 130)
 C_TEXT_BRT = (210, 210, 210)
 C_PANEL_BG = (22, 22, 28, 200)  # semi-transparent (needs Surface)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hemisphere sampler
+# ─────────────────────────────────────────────────────────────────────────────
+def sample_hemisphere_positions(
+    shoulder: List[float],
+    arm_length: float,
+    n: int,
+    min_reach: float = 0.4,  # fraction of arm_length (avoid singularities near shoulder)
+    max_reach: float = 0.85,  # fraction of arm_length (leave margin before full extension)
+    min_elevation: float = -20.0,  # degrees below horizontal (allow slightly downward)
+    max_elevation: float = 80.0,  # degrees above horizontal
+    az_min: float = -70.0,  # azimuth range in degrees relative to robot forward (+X)
+    az_max: float = 70.0,
+    seed: int = None,
+) -> List[List[float]]:
+    """
+    Return n positions sampled uniformly inside a reachable hemisphere shell.
+
+    The hemisphere is centred on  and opens toward +X (robot forward).
+    Elevation and azimuth limits keep targets in front of and reachable by the arm.
+
+    Parameters
+    ----------
+    shoulder    : [x, y, z] world position of the shoulder joint
+    arm_length  : total arm length in metres (used to scale reach bounds)
+    n           : number of positions to generate
+    min_reach   : closest target as a fraction of arm_length
+    max_reach   : furthest target as a fraction of arm_length
+    min_elevation / max_elevation : vertical angle range in degrees
+    az_min / az_max               : horizontal angle range in degrees
+    seed        : optional RNG seed for reproducibility
+    """
+    rng = random.Random(seed)
+    positions = []
+    r_min = arm_length * min_reach
+    r_max = arm_length * max_reach
+
+    el_lo = math.radians(min_elevation)
+    el_hi = math.radians(max_elevation)
+    az_lo = math.radians(az_min)
+    az_hi = math.radians(az_max)
+
+    while len(positions) < n:
+        # uniform in elevation (not uniform on sphere, but fine for this use-case)
+        el = rng.uniform(el_lo, el_hi)
+        az = rng.uniform(az_lo, az_hi)
+        r = rng.uniform(r_min, r_max)
+
+        # spherical -> cartesian  (elevation from XY plane, azimuth around Z)
+        x = shoulder[0] + r * math.cos(el) * math.cos(az)
+        y = shoulder[1] + r * math.cos(el) * math.sin(az)
+        z = shoulder[2] + r * math.sin(el)
+        positions.append([x, y, z])
+
+    return positions
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -87,21 +146,31 @@ class ReachTarget:
     def _spawn_dummy(self):
         """Create a visible sphere dummy at the target position."""
         sim = self.sim
-        # small sphere visual (pure shape, no physics)
-        self._dummy = sim.createPrimitiveShape(
-            sim.primitiveshape_sphere, [self.radius * 2] * 3, 1
-        )
+        # Use createDummy as the marker — it is always available via ZMQ and
+        # we know it works (the main controller already calls it).
+        # A small dummy is invisible by default; we rely on the HUD for feedback.
+        # If you want a visible sphere in the 3-D viewport you can enable the
+        # block commented out below once you have confirmed the basic flow works.
+        self._dummy = sim.createDummy(self.radius * 2)
+        if self._dummy is None or self._dummy < 0:
+            raise RuntimeError(
+                f"createDummy returned invalid handle ({self._dummy}). "
+                "Ensure the simulation is running before creating an Experiment."
+            )
         sim.setObjectPosition(self._dummy, self.position)
         sim.setObjectAlias(self._dummy, self.label)
 
-        # colour: teal-ish, semi-transparent
-        sim.setShapeColor(
-            self._dummy, None, sim.colorcomponent_ambient_diffuse, [0.2, 0.85, 0.6]
-        )
-        sim.setShapeColor(self._dummy, None, sim.colorcomponent_transparency, [0.55])
-        sim.setObjectInt32Param(self._dummy, sim.objintparam_visibility_layer, 1)
-        # make it non-collidable / non-respondable
-        sim.setObjectInt32Param(self._dummy, sim.shapeintparam_respondable, 0)
+        # ── Optional: visible sphere (uncomment if createPrimitiveShape works) ──
+        # handle = sim.createPrimitiveShape(0, [self.radius * 2] * 3, 0)
+        # if handle is not None and handle >= 0:
+        #     sim.setObjectPosition(handle, self.position)
+        #     sim.setObjectAlias(handle, self.label + "_sphere")
+        #     sim.setShapeColor(handle, None, 0, [0.2, 0.85, 0.6])
+        #     sim.setObjectInt32Param(handle, 10, 1)
+        #     sim.setObjectInt32Param(handle, 3, 0)
+        #     self._sphere_handle = handle
+        # else:
+        #     self._sphere_handle = None
 
     def remove(self):
         """Remove the dummy from the sim (call when trial ends)."""
@@ -255,12 +324,23 @@ class Experiment:
     """
     Runs a sequence of reach trials and logs results.
 
+    Two ways to create trials:
+
+    1. Explicit positions (original behaviour):
+         Experiment(sim, trials=[{"pos": [x,y,z], "radius": 0.04}, ...])
+
+    2. Random hemisphere (recommended):
+         Experiment.from_hemisphere(sim, shoulder_pos, arm_length, n_trials=6)
+
     Parameters
     ----------
     sim     : CoppeliaSim sim handle
-    trials  : list of dicts, each forwarded to ReachTarget as kwargs
-              required key: 'pos'   (position)
-              optional:     'radius', 'dwell_time', 'timeout', 'label'
+    trials  : list of dicts with keys:
+                pos        – [x,y,z] world position (required)
+                radius     – success zone metres  (default 0.04)
+                dwell_time – seconds to hold      (default 0.5)
+                timeout    – seconds per trial    (default 15.0)
+                label      – HUD string           (default "Trial N")
     """
 
     def __init__(self, sim, trials: List[dict]):
@@ -272,6 +352,58 @@ class Experiment:
         self._start_time = time.time()
         self._trial_start = time.time()
         self._spawn_next()
+
+    @classmethod
+    def from_hemisphere(
+        cls,
+        sim,
+        shoulder_pos: List[float],
+        arm_length: float,
+        n_trials: int = 6,
+        radius: float = 0.04,
+        dwell_time: float = 0.5,
+        timeout: float = 20.0,
+        seed: int = None,
+        # hemisphere tuning – forwarded to sample_hemisphere_positions
+        min_reach: float = 0.4,
+        max_reach: float = 0.85,
+        min_elevation: float = -20.0,
+        max_elevation: float = 60.0,
+        az_min: float = -70.0,
+        az_max: float = 70.0,
+    ) -> "Experiment":
+        """
+        Convenience constructor: generates n_trials random reachable targets.
+
+        Example
+        -------
+        shoulder = sim.getObjectPosition(rightShoulderAbduct, -1)
+        exp = Experiment.from_hemisphere(sim, shoulder, arm_length=0.456,
+                                         n_trials=6, radius=0.04, seed=42)
+        """
+        positions = sample_hemisphere_positions(
+            shoulder=shoulder_pos,
+            arm_length=arm_length,
+            n=n_trials,
+            min_reach=min_reach,
+            max_reach=max_reach,
+            min_elevation=min_elevation,
+            max_elevation=max_elevation,
+            az_min=az_min,
+            az_max=az_max,
+            seed=seed,
+        )
+        trials = [
+            {
+                "pos": pos,
+                "radius": radius,
+                "dwell_time": dwell_time,
+                "timeout": timeout,
+                "label": f"Trial {i+1}",
+            }
+            for i, pos in enumerate(positions)
+        ]
+        return cls(sim, trials)
 
     # ── spawn ─────────────────────────────────────────────────────────────────
     def _spawn_next(self):
