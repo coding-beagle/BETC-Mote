@@ -9,20 +9,39 @@ ROBOT_ARM_LENGTH = 0.21492 + 0.24129
 MOVE_SPEED = 0.005  # metres per sim step
 ROT_SPEED = 0.02  # radians per sim step
 
-# Signal name read by the Lua gripper script each actuation step.
-# 1 = close, 0 = open
 GRIPPER_SIGNAL = "gripper_close"
-
 TRIGGER_THRESHOLD = 0.1
 DEADZONE = 0.1
+MODE_BUTTON = 5  # RB
+RESET_BUTTON = 1  # B
 
-# Button index for mode toggle (RB on a standard gamepad)
-MODE_BUTTON = 5
-RESET_BUTTON = 1
+COL_POSITION = (100, 220, 100)
+COL_ROTATION = (220, 160, 60)
 
-# Colours for mode indicator
-COL_POSITION = (100, 220, 100)  # green
-COL_ROTATION = (220, 160, 60)  # amber
+# ── display layout ────────────────────────────────────────────────────────────
+W, H = 700, 420
+STICK_R = 50  # radius of stick gate circle
+STICK_DOT_R = 8  # radius of stick position dot
+TRIG_W = 30
+TRIG_H = 80
+
+# Stick centre positions  (x, y)
+LS_CX, LS_CY = 140, 260
+RS_CX, RS_CY = 370, 260
+
+# Trigger positions  (top-left x, y)
+LT_X, LT_Y = 55, 60
+RT_X, RT_Y = 610, 60
+
+# Button positions  {index: (cx, cy, label)}
+BUTTON_LAYOUT = {
+    0: (580, 200, "A"),
+    1: (605, 175, "B"),
+    2: (555, 175, "X"),
+    3: (580, 150, "Y"),
+    4: (120, 110, "LB"),
+    5: (580, 110, "RB"),
+}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -47,7 +66,6 @@ def apply_deadzone(value, deadzone):
 
 
 def euler_to_quaternion(roll, pitch, yaw):
-    """Convert Euler angles (radians) to quaternion [x, y, z, w]."""
     cr, sr = np.cos(roll / 2), np.sin(roll / 2)
     cp, sp = np.cos(pitch / 2), np.sin(pitch / 2)
     cy, sy = np.cos(yaw / 2), np.sin(yaw / 2)
@@ -75,6 +93,56 @@ def normalise_quaternion(q):
     return [v / n for v in q] if n > 1e-9 else q
 
 
+# ── drawing helpers ───────────────────────────────────────────────────────────
+def draw_stick(surf, cx, cy, ax, ay, label, active_col):
+    """Draw a stick gate, dot, and cross-hair."""
+    # Gate
+    pygame.draw.circle(surf, (70, 70, 70), (cx, cy), STICK_R, 2)
+    # Cross-hair
+    pygame.draw.line(surf, (50, 50, 50), (cx - STICK_R, cy), (cx + STICK_R, cy), 1)
+    pygame.draw.line(surf, (50, 50, 50), (cx, cy - STICK_R), (cx, cy + STICK_R), 1)
+    # Dot
+    dot_x = int(cx + ax * STICK_R)
+    dot_y = int(cy + ay * STICK_R)
+    pygame.draw.circle(surf, active_col, (dot_x, dot_y), STICK_DOT_R)
+    pygame.draw.circle(surf, (255, 255, 255), (dot_x, dot_y), STICK_DOT_R, 1)
+    # Label
+    lbl = pygame.font.SysFont("monospace", 13).render(label, True, (160, 160, 160))
+    surf.blit(lbl, (cx - lbl.get_width() // 2, cy + STICK_R + 6))
+
+
+def draw_trigger(surf, tx, ty, value, label, active_col):
+    """Draw a vertical trigger bar."""
+    pygame.draw.rect(surf, (60, 60, 60), (tx, ty, TRIG_W, TRIG_H), 2)
+    fill_h = int(TRIG_H * value)
+    if fill_h > 0:
+        pygame.draw.rect(
+            surf, active_col, (tx + 2, ty + TRIG_H - fill_h, TRIG_W - 4, fill_h)
+        )
+    lbl = pygame.font.SysFont("monospace", 13).render(label, True, (160, 160, 160))
+    surf.blit(lbl, (tx + TRIG_W // 2 - lbl.get_width() // 2, ty + TRIG_H + 4))
+
+
+def draw_button(surf, cx, cy, label, pressed):
+    col_fill = (220, 180, 50) if pressed else (55, 55, 55)
+    col_border = (255, 220, 100) if pressed else (110, 110, 110)
+    col_text = (20, 20, 20) if pressed else (160, 160, 160)
+    pygame.draw.circle(surf, col_fill, (cx, cy), 16)
+    pygame.draw.circle(surf, col_border, (cx, cy), 16, 2)
+    lbl = pygame.font.SysFont("monospace", 11, bold=pressed).render(
+        label, True, col_text
+    )
+    surf.blit(lbl, (cx - lbl.get_width() // 2, cy - lbl.get_height() // 2))
+
+
+def draw_gamepad_body(surf):
+    """Draw a simple controller silhouette."""
+    pygame.draw.ellipse(surf, (45, 45, 45), (60, 140, 580, 240))
+    # Grip bumps
+    pygame.draw.ellipse(surf, (45, 45, 45), (50, 310, 160, 100))
+    pygame.draw.ellipse(surf, (45, 45, 45), (490, 310, 160, 100))
+
+
 # ── CoppeliaSim setup ─────────────────────────────────────────────────────────
 print("Connecting to CoppeliaSim...")
 client = RemoteAPIClient()
@@ -85,7 +153,8 @@ rightShoulderAbduct = sim.getObject("/rightJoint1")
 rightWristLink = sim.getObject(
     "/rightJoint1/rightLink1/rightJoint2/rightLink2"
     "/rightJoint3/rightLink3/rightJoint4/rightLink4"
-    "/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7/rightLink7"
+    "/rightJoint5/rightLink5/rightJoint6/rightLink6"
+    "/rightJoint7/rightLink7"
 )
 
 target = sim.createDummy(0.02)
@@ -128,7 +197,7 @@ simIK.addElementFromScene(
     simIK.constraint_position,
 )
 
-# ── Pygame / joystick setup ───────────────────────────────────────────────────
+# ── Pygame setup ──────────────────────────────────────────────────────────────
 pygame.init()
 pygame.joystick.init()
 
@@ -138,27 +207,13 @@ if pygame.joystick.get_count() == 0:
 joystick = pygame.joystick.Joystick(0)
 joystick.init()
 print(f"Using joystick: {joystick.get_name()}")
-print(
-    "Controls:\n"
-    "  ── POSITION mode (RB not held) ──\n"
-    "  Left  stick X/Y  → end-effector Y / X  (left/right, forward/back)\n"
-    "  Right stick Y    → end-effector Z       (up/down)\n"
-    "\n"
-    "  ── ROTATION mode (hold RB) ──\n"
-    "  Left  stick X    → yaw\n"
-    "  Left  stick Y    → pitch\n"
-    "  Right stick Y    → roll\n"
-    "\n"
-    "  ── Always active ──\n"
-    "  RT (axis 5)      → gripper open\n"
-    "  LT (axis 4)      → gripper close  (wins if both pressed)\n"
-    "  Q / Start btn    → quit\n"
-)
 
-screen = pygame.display.set_mode((460, 260))
+screen = pygame.display.set_mode((W, H))
 pygame.display.set_caption("YuMi 7-DOF Joystick Control")
-font = pygame.font.SysFont("monospace", 16)
-font_large = pygame.font.SysFont("monospace", 18, bold=True)
+font_sm = pygame.font.SysFont("monospace", 13)
+font_md = pygame.font.SysFont("monospace", 15)
+font_lg = pygame.font.SysFont("monospace", 17, bold=True)
+clock = pygame.time.Clock()
 
 try:
     print("Starting simulation...")
@@ -180,24 +235,27 @@ try:
             elif event.type == pygame.JOYBUTTONDOWN and event.button == 7:
                 running = False
 
-        # ── read axes & mode button ───────────────────────────────────────────
-        # Axes:
-        #   0  left  stick X (left/right)
-        #   1  left  stick Y (forward/back)
-        #   2  right stick X (unused in both modes)
-        #   3  right stick Y (Z in position mode, roll in rotation mode)
-        #   4  LT             (gripper close, -1 rest → +1 full)
-        #   5  RT             (gripper open,  -1 rest → +1 full)
-        ls_x = apply_deadzone(joystick.get_axis(0), DEADZONE)
-        ls_y = apply_deadzone(joystick.get_axis(1), DEADZONE)
-        rs_y = apply_deadzone(joystick.get_axis(3), DEADZONE)
-        lt = (joystick.get_axis(4) + 1.0) / 2.0
-        rt = (joystick.get_axis(5) + 1.0) / 2.0
+        # ── read inputs ───────────────────────────────────────────────────────
+        ls_x_raw = joystick.get_axis(0)
+        ls_y_raw = joystick.get_axis(1)
+        rs_x_raw = joystick.get_axis(2)
+        rs_y_raw = joystick.get_axis(3)
+        lt_raw = joystick.get_axis(4)
+        rt_raw = joystick.get_axis(5)
+
+        ls_x = apply_deadzone(ls_x_raw, DEADZONE)
+        ls_y = apply_deadzone(ls_y_raw, DEADZONE)
+        rs_y = apply_deadzone(rs_y_raw, DEADZONE)
+        lt = (lt_raw + 1.0) / 2.0
+        rt = (rt_raw + 1.0) / 2.0
 
         rotation_mode = joystick.get_button(MODE_BUTTON)
         reset_rot = joystick.get_button(RESET_BUTTON)
 
-        # ── gripper — always active ───────────────────────────────────────────
+        num_buttons = joystick.get_numbuttons()
+        button_states = [joystick.get_button(i) for i in range(num_buttons)]
+
+        # ── gripper ───────────────────────────────────────────────────────────
         if lt > TRIGGER_THRESHOLD:
             sim.setInt32Signal(GRIPPER_SIGNAL, 1)
             gripper_open = False
@@ -207,66 +265,103 @@ try:
 
         # ── position mode ─────────────────────────────────────────────────────
         if not rotation_mode:
-            dx = ls_y * MOVE_SPEED  # forward / back  (CoppeliaSim X)
-            dy = ls_x * MOVE_SPEED  # left   / right  (CoppeliaSim Y)
-            dz = -rs_y * MOVE_SPEED  # up     / down   (CoppeliaSim Z)
-
-            target_pos = vec_add(target_pos, [dx, dy, dz])
+            target_pos = vec_add(
+                target_pos,
+                [
+                    ls_y * MOVE_SPEED,
+                    ls_x * MOVE_SPEED,
+                    -rs_y * MOVE_SPEED,
+                ],
+            )
             target_pos = vec_clamp_to_sphere(
                 robot_shoulder_world, target_pos, ROBOT_ARM_LENGTH
             )
 
         # ── rotation mode ─────────────────────────────────────────────────────
         else:
-            d_pitch = ls_y * ROT_SPEED  # left stick Y → pitch
-            d_yaw = ls_x * ROT_SPEED  # left stick X → yaw
-            d_roll = rs_y * ROT_SPEED  # right stick Y → roll
+            d_pitch = ls_y * ROT_SPEED
+            d_yaw = ls_x * ROT_SPEED
+            d_roll = rs_y * ROT_SPEED
 
             if d_pitch or d_yaw or d_roll:
                 delta = euler_to_quaternion(d_roll, d_pitch, d_yaw)
                 target_quat = normalise_quaternion(
                     quaternion_multiply(target_quat, delta)
                 )
-            elif reset_rot:
-                target_quat = [0, 0, 0, 1]
+
+            if reset_rot:
+                target_quat = [0.0, 0.0, 0.0, 1.0]
 
         # ── push to sim ───────────────────────────────────────────────────────
         sim.setObjectPosition(target, target_pos)
         sim.setObjectQuaternion(target, target_quat)
 
-        # Always use the full pose-constrained damped group so orientation is
-        # actually enforced by the IK solver in both modes.
         res, *_ = simIK.handleGroup(ikEnv, ikGroupUndamped, {"syncWorlds": True})
         if res != simIK.result_success:
             simIK.handleGroup(ikEnv, ikGroupDamped, {"syncWorlds": True})
 
         sim.step()
 
-        # ── display ───────────────────────────────────────────────────────────
-        screen.fill((30, 30, 30))
+        # ── draw ──────────────────────────────────────────────────────────────
+        screen.fill((22, 22, 28))
 
-        mode_label = (
-            "[ ROTATION MODE — hold RB ]"
-            if rotation_mode
-            else "[ POSITION MODE — hold RB to rotate ]"
-        )
+        # Controller body
+        # draw_gamepad_body(screen)
+
+        # Mode banner
+        mode_label = "[ ROTATION MODE ]" if rotation_mode else "[ POSITION MODE ]"
         mode_col = COL_ROTATION if rotation_mode else COL_POSITION
-        screen.blit(font_large.render(mode_label, True, mode_col), (10, 8))
+        hint_label = (
+            "holding RB"
+            if rotation_mode
+            else "hold RB to rotate  |  B to reset orientation"
+        )
+        screen.blit(font_lg.render(mode_label, True, mode_col), (10, 8))
+        screen.blit(font_sm.render(hint_label, True, (130, 130, 130)), (10, 32))
 
+        # Sticks — colour by mode
+        ls_col = COL_ROTATION if rotation_mode else COL_POSITION
+        rs_col = COL_ROTATION if rotation_mode else COL_POSITION
+
+        ls_label = "pitch / yaw" if rotation_mode else "X / Y pos"
+        rs_label = "roll" if rotation_mode else "Z pos"
+
+        draw_stick(screen, LS_CX, LS_CY, ls_x_raw, ls_y_raw, ls_label, ls_col)
+        draw_stick(screen, RS_CX, RS_CY, rs_x_raw, rs_y_raw, rs_label, rs_col)
+
+        # Triggers
+        lt_col = (220, 100, 100) if lt > TRIGGER_THRESHOLD else (100, 160, 220)
+        rt_col = (100, 220, 130) if rt > TRIGGER_THRESHOLD else (100, 160, 220)
+        draw_trigger(screen, LT_X, LT_Y, lt, "LT close", lt_col)
+        draw_trigger(screen, RT_X, RT_Y, rt, "RT open", rt_col)
+
+        # Buttons
+        for idx, (bx, by, blabel) in BUTTON_LAYOUT.items():
+            pressed = button_states[idx] if idx < num_buttons else False
+            draw_button(screen, bx, by, blabel, pressed)
+
+        # Telemetry panel (right side)
+        px, py = 490, 150
         gripper_label = "OPEN" if gripper_open else "CLOSED"
-        lines = [
-            f"Target  X: {target_pos[0]:.4f}  Y: {target_pos[1]:.4f}  Z: {target_pos[2]:.4f}",
-            f"Quat    x: {target_quat[0]:.3f}  y: {target_quat[1]:.3f}",
-            f"  z: {target_quat[2]:.3f}  w: {target_quat[3]:.3f}",
-            f"Reset rot: {'Active' if reset_rot else 'Inactive'}",
-            f"L-stick ({ls_x:+.2f}, {ls_y:+.2f})   R-stick Y {rs_y:+.2f}",
-            f"Gripper: {gripper_label}  (LT={lt:.2f}  RT={rt:.2f})",
-            "Q / Start button to quit",
-        ]
-        for i, line in enumerate(lines):
-            screen.blit(font.render(line, True, (200, 200, 200)), (10, 38 + i * 22))
+        # tele_lines = [
+        #     ("TARGET", None),
+        #     (f" X {target_pos[0]:+.3f}", None),
+        #     (f" Y {target_pos[1]:+.3f}", None),
+        #     (f" Z {target_pos[2]:+.3f}", None),
+        #     ("QUAT", None),
+        #     (f" x {target_quat[0]:+.3f}  y {target_quat[1]:+.3f}", None),
+        #     (f" z {target_quat[2]:+.3f}  w {target_quat[3]:+.3f}", None),
+        #     (
+        #         f"GRIP {gripper_label}",
+        #         (100, 220, 130) if gripper_open else (220, 100, 100),
+        #     ),
+        # ]
+        # for i, (txt, col) in enumerate(tele_lines):
+        #     c = col if col else (190, 190, 190)
+        #     screen.blit(font_sm.render(txt, True, c), (px, py + i * 18))
 
         pygame.display.flip()
+        clock.tick(60)
 
 except KeyboardInterrupt:
     print("Interrupted.")
