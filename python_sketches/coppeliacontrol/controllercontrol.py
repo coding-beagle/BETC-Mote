@@ -162,11 +162,11 @@ rightWristLink = sim.getObject(
 simIndex = 0
 simObject = 0
 
+# wristTarget cleanup
 while simObject != -1:
     simObject = sim.getObjects(simIndex, sim.handle_all)
     if simObject != -1:
         alias = sim.getObjectAlias(simObject)
-        print(alias)
         if alias == "WristTarget":
             print("Removing Object!")
             sim.removeObjects([simObject])

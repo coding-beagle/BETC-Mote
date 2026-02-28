@@ -288,7 +288,7 @@ class ReachTarget:
 
         # ── panel background ──────────────────────────────────────────────────
         panel_w, panel_h = 260, 110
-        px, py = W - panel_w - 10, 150
+        px, py = W - panel_w - 10, 250
         panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
         panel.fill((22, 22, 28, 190))
         surf.blit(panel, (px, py))
