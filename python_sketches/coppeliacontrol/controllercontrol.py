@@ -4,6 +4,8 @@ import numpy as np
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
 # ── NEW: import experiment module ─────────────────────────────────────────────
+import csv
+import datetime
 from reach_experiment import Experiment
 
 # ── constants ────────────────────────────────────────────────────────────────
@@ -47,16 +49,16 @@ BUTTON_LAYOUT = {
 # ── NEW: experiment configuration ────────────────────────────────────────────
 # Targets are placed randomly on a reachable hemisphere centred on the shoulder.
 # Tune these values to match your robot and desired difficulty.
-EXP_N_TRIALS = 6  # number of targets
+EXP_N_TRIALS = 10  # number of targets
 EXP_RADIUS = 0.05  # success zone radius in metres
 EXP_DWELL_TIME = 0.5  # seconds to hold inside zone
 EXP_TIMEOUT = 20.0  # seconds per trial before fail
 EXP_MIN_REACH = 0.7  # nearest target (fraction of arm length)
-EXP_MAX_REACH = 1.20  # furthest target (fraction of arm length)
-EXP_MIN_ELEVATION = -45.0  # degrees – allow slightly below horizontal
-EXP_MAX_ELEVATION = 60.0  # degrees – cap well before overhead singularity
-EXP_AZ_MIN = 0.0  # degrees – quarter-sphere spread around centre
-EXP_AZ_MAX = 90.0  # degrees
+EXP_MAX_REACH = 0.9  # furthest target (fraction of arm length)
+EXP_MIN_ELEVATION = -35.0  # degrees – allow slightly below horizontal
+EXP_MAX_ELEVATION = 50.0  # degrees – cap well before overhead singularity
+EXP_AZ_MIN = 20.0  # degrees – quarter-sphere spread around centre
+EXP_AZ_MAX = 110.0  # degrees
 EXP_SEED = None  # set an int for reproducible target placement
 
 
@@ -155,8 +157,7 @@ rightShoulderAbduct = sim.getObject("/rightJoint1")
 rightWristLink = sim.getObject(
     "/rightJoint1/rightLink1/rightJoint2/rightLink2"
     "/rightJoint3/rightLink3/rightJoint4/rightLink4"
-    "/rightJoint5/rightLink5/rightJoint6/rightLink6"
-    "/rightJoint7/rightLink7"
+    "/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7/rightLink7"
 )
 
 target = sim.createDummy(0.02)
@@ -389,3 +390,40 @@ finally:
     sim.stopSimulation()
     pygame.quit()
     print("Simulation stopped.")
+
+    # ── Save results to CSV ───────────────────────────────────────────────────
+    results = experiment.results if "experiment" in dir() else []
+    if results:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"controllerReachResults/reach_results_{ts}.csv"
+        fieldnames = [
+            "trial",
+            "label",
+            "result",
+            "duration_s",
+            "target_x",
+            "target_y",
+            "target_z",
+        ]
+        # pull target positions from trial defs for full context
+        trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
+        with open(filename, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in results:
+                pos = trial_defs.get(r["trial"], {}).get("pos", [None, None, None])
+                writer.writerow(
+                    {
+                        "trial": r["trial"],
+                        "label": r["label"],
+                        "result": r["result"],
+                        "duration_s": round(r["duration"], 3),
+                        "target_x": round(pos[0], 4) if pos[0] is not None else "",
+                        "target_y": round(pos[1], 4) if pos[1] is not None else "",
+                        "target_z": round(pos[2], 4) if pos[2] is not None else "",
+                    }
+                )
+        print(f"Results saved to {filename}")
+        print(experiment.summary())
+    else:
+        print("No results to save.")

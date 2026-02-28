@@ -124,7 +124,11 @@ class ReachTarget:
     _flash_t: float = field(default=0.0, init=False, repr=False)
     _started: bool = field(default=False, init=False, repr=False)
     _start_wrist: Optional[List[float]] = field(default=None, init=False, repr=False)
-    MOVE_THRESHOLD: float = field(default=0.01, init=False, repr=False)  # metres
+    _settle_frames: int = field(default=0, init=False, repr=False)
+    MOVE_THRESHOLD: float = field(default=0.02, init=False, repr=False)  # metres
+    SETTLE_FRAMES: int = field(
+        default=10, init=False, repr=False
+    )  # skip N frames before latching reference
 
     def __post_init__(self):
         self._spawn_dummy()
@@ -178,8 +182,13 @@ class ReachTarget:
         if self._result is not None:
             return self._result
 
-        # Latch first movement: timer doesn't start until the wrist moves
+        # Latch first movement: timer doesn't start until the wrist moves.
+        # We skip SETTLE_FRAMES first to let the IK converge before recording
+        # the reference position — otherwise IK settling looks like movement.
         if not self._started:
+            self._settle_frames += 1
+            if self._settle_frames <= self.SETTLE_FRAMES:
+                return None  # too early to latch reference
             if self._start_wrist is None:
                 self._start_wrist = list(wrist_pos)
             moved = math.sqrt(
@@ -187,12 +196,11 @@ class ReachTarget:
             )
             if moved >= self.MOVE_THRESHOLD:
                 self._started = True
-            # don't accumulate elapsed until started
             dist = math.sqrt(
                 sum((wrist_pos[i] - self.position[i]) ** 2 for i in range(3))
             )
             self._inside = dist <= self.radius
-            return None  # no timeout possible yet
+            return None
 
         self._elapsed += dt
 
