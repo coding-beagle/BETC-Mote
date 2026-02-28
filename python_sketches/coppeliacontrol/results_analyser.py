@@ -100,10 +100,8 @@ def plot_overview(datasets: list):
             dict(name=name, color=color, durations=durations, speeds=speeds)
         )
 
-    # Pre-compute combined pools (safe to concatenate — within-run only)
-    all_durations = np.concatenate([e["durations"] for e in exp_data])
-    valid_speeds = [e["speeds"] for e in exp_data if len(e["speeds"]) > 0]
-    all_speeds = np.concatenate(valid_speeds) if valid_speeds else np.array([])
+    # Note: combined pools are computed fresh inside redraw() so that
+    # _active_durations / _active_speeds are always respected.
 
     state = {"combined": False, "standardised": False, "skip_first_move": False}
 
@@ -219,37 +217,46 @@ def plot_overview(datasets: list):
             return speeds[1:]
         return speeds
 
+    def _active_durations(durations):
+        """Return durations with the first trial optionally removed."""
+        if state["skip_first_move"] and len(durations) > 1:
+            return durations[1:]
+        return durations
+
     def redraw():
         ax1.cla()
         ax2.cla()
         ax1.set_facecolor(BG)
         ax2.set_facecolor(BG)
         if state["combined"]:
-            # Recompute combined pool respecting skip_first_move
+            dur_pool = [_active_durations(e["durations"]) for e in exp_data]
             spd_pool = [
                 _active_speeds(e["speeds"]) for e in exp_data if len(e["speeds"]) > 0
             ]
+            combined_dur = np.concatenate(dur_pool) if dur_pool else np.array([])
             combined_spd = np.concatenate(spd_pool) if spd_pool else np.array([])
-            _draw_normal(
-                ax1, all_durations, COMBINED_COLOR, "All trials", add_hist=True
-            )
+            _draw_normal(ax1, combined_dur, COMBINED_COLOR, "All trials", add_hist=True)
             _draw_normal(ax2, combined_spd, COMBINED_COLOR, "All trials", add_hist=True)
             subtitle = "Combined"
         else:
             for e in exp_data:
-                _draw_normal(ax1, e["durations"], e["color"], e["name"])
+                _draw_normal(
+                    ax1, _active_durations(e["durations"]), e["color"], e["name"]
+                )
                 _draw_normal(ax2, _active_speeds(e["speeds"]), e["color"], e["name"])
             subtitle = "Per Experiment"
-        _style(ax1, "Duration (s)", "Distribution of Run Durations")
+        dur_xlabel = "Duration (s)"
         spd_xlabel = "Speed (units / s)"
         if state["skip_first_move"]:
+            dur_xlabel += "  [1st trial excluded]"
             spd_xlabel += "  [1st move excluded]"
+        _style(ax1, dur_xlabel, "Distribution of Run Durations")
         _style(ax2, spd_xlabel, "Distribution of Within-Run Speeds")
         tags = []
         if state["standardised"]:
             tags.append("standardised")
         if state["skip_first_move"]:
-            tags.append("1st move excluded")
+            tags.append("1st excluded")
         tag_str = f"  [{', '.join(tags)}]" if tags else ""
         fig.suptitle(
             f"Robot Arm Experiments — {subtitle}{tag_str}",
