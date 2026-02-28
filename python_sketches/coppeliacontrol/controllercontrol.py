@@ -159,10 +159,21 @@ rightWristLink = sim.getObject(
     "/rightJoint3/rightLink3/rightJoint4/rightLink4"
     "/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7/rightLink7"
 )
+simIndex = 0
+simObject = 0
+
+while simObject != -1:
+    simObject = sim.getObjects(simIndex, sim.handle_all)
+    if simObject != -1:
+        alias = sim.getObjectAlias(simObject)
+        print(alias)
+        if alias == "WristTarget":
+            print("Removing Object!")
+            sim.removeObjects([simObject])
+    simIndex += 1
 
 target = sim.createDummy(0.02)
 sim.setObjectAlias(target, "WristTarget")
-
 robot_shoulder_world = sim.getObjectPosition(rightShoulderAbduct, -1)
 print(f"Robot shoulder origin: {robot_shoulder_world}")
 
