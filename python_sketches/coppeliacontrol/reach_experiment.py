@@ -351,6 +351,7 @@ class Experiment:
         self._active: Optional[ReachTarget] = None
         self._start_time = time.time()
         self._trial_start = time.time()
+        self._result_logged = False
         self._spawn_next()
 
     @classmethod
@@ -427,7 +428,8 @@ class Experiment:
         if self._active is None:
             return
         result = self._active.update(wrist_pos, dt)
-        if result is not None:
+        if result is not None and not self._result_logged:
+            self._result_logged = True
             self._results.append(
                 {
                     "trial": self._index + 1,
@@ -437,9 +439,7 @@ class Experiment:
                 }
             )
             self._index += 1
-            # keep flash alive then advance
-            if not self._active._flash_t:
-                self._spawn_next()
+            # _spawn_next is called by _maybe_advance once the flash finishes
 
     def _maybe_advance(self):
         """Advance to next trial once flash animation finishes."""
@@ -448,6 +448,7 @@ class Experiment:
             and self._active.finished
             and self._active._flash_t <= 0
         ):
+            self._result_logged = False
             self._spawn_next()
 
     # ── draw ──────────────────────────────────────────────────────────────────
