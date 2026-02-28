@@ -18,6 +18,7 @@ DEADZONE = 0.1
 
 # Button index for mode toggle (RB on a standard gamepad)
 MODE_BUTTON = 5
+RESET_BUTTON = 1
 
 # Colours for mode indicator
 COL_POSITION = (100, 220, 100)  # green
@@ -194,6 +195,7 @@ try:
         rt = (joystick.get_axis(5) + 1.0) / 2.0
 
         rotation_mode = joystick.get_button(MODE_BUTTON)
+        reset_rot = joystick.get_button(RESET_BUTTON)
 
         # ── gripper — always active ───────────────────────────────────────────
         if lt > TRIGGER_THRESHOLD:
@@ -225,6 +227,8 @@ try:
                 target_quat = normalise_quaternion(
                     quaternion_multiply(target_quat, delta)
                 )
+            elif reset_rot:
+                target_quat = [0, 0, 0, 1]
 
         # ── push to sim ───────────────────────────────────────────────────────
         sim.setObjectPosition(target, target_pos)
@@ -252,8 +256,9 @@ try:
         gripper_label = "OPEN" if gripper_open else "CLOSED"
         lines = [
             f"Target  X: {target_pos[0]:.4f}  Y: {target_pos[1]:.4f}  Z: {target_pos[2]:.4f}",
-            f"Quat    x: {target_quat[0]:.3f}  y: {target_quat[1]:.3f}"
+            f"Quat    x: {target_quat[0]:.3f}  y: {target_quat[1]:.3f}",
             f"  z: {target_quat[2]:.3f}  w: {target_quat[3]:.3f}",
+            f"Reset rot: {'Active' if reset_rot else 'Inactive'}",
             f"L-stick ({ls_x:+.2f}, {ls_y:+.2f})   R-stick Y {rs_y:+.2f}",
             f"Gripper: {gripper_label}  (LT={lt:.2f}  RT={rt:.2f})",
             "Q / Start button to quit",
