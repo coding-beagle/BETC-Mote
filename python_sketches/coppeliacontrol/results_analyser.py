@@ -199,15 +199,25 @@ def plot_overview(datasets: list):
         a.set_xlabel(xlabel, fontsize=11)
         a.set_ylabel("Probability Density", fontsize=11)
         a.set_title(title, fontsize=12, fontweight="bold")
-        # Place legend below axes so it never covers buttons regardless of count
-        a.legend(
-            fontsize=9,
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.18),
-            ncol=max(1, min(3, n_exp // 2 + 1)),
-            frameon=True,
-            framealpha=0.9,
-        )
+        # Combined mode has one entry — keep it inside the axes so it isn't
+        # hidden behind the buttons.  Per-experiment mode pushes it below to
+        # avoid overlapping the (potentially many) curves.
+        if state["combined"]:
+            a.legend(
+                fontsize=9,
+                loc="upper right",
+                frameon=True,
+                framealpha=0.9,
+            )
+        else:
+            a.legend(
+                fontsize=9,
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.18),
+                ncol=max(1, min(3, n_exp // 2 + 1)),
+                frameon=True,
+                framealpha=0.9,
+            )
         a.grid(axis="y", linestyle="--", alpha=0.4)
         a.spines[["top", "right"]].set_visible(False)
 
