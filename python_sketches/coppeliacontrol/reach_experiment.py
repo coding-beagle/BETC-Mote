@@ -56,20 +56,13 @@ def sample_hemisphere_positions(
     n,
     min_reach=0.4,
     max_reach=0.85,
-    min_elevation=-10.0,  # quarter-sphere: shallow floor
-    max_elevation=80.0,  # quarter-sphere: cap before overhead singularity
-    az_min=-45.0,  # quarter-sphere: 90 deg total spread around centre
+    min_elevation=-10.0,
+    max_elevation=80.0,
+    az_min=-45.0,
     az_max=45.0,
-    az_centre=-90.0,  # degrees in XY plane: 0=+X forward, -90=-Y (right arm side)
+    az_centre=-90.0,
     seed=None,
 ):
-    """
-    Return n world positions sampled inside a reachable quarter-sphere shell.
-
-    az_centre rotates the opening direction in the XY plane.
-    az_min / az_max are spread angles in degrees around that centre.
-    Defaults give a quarter-sphere opening toward -Y (right arm side on YuMi).
-    """
     rng = random.Random(seed)
     positions = []
     r_min = arm_length * min_reach
@@ -95,19 +88,6 @@ def sample_hemisphere_positions(
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass
 class ReachTarget:
-    """
-    One spatial goal.
-
-    Parameters
-    ----------
-    sim         : CoppeliaSim sim handle (from RemoteAPIClient)
-    position    : [x, y, z] in world metres
-    radius      : success zone radius in metres
-    dwell_time  : seconds the wrist must stay inside the zone to succeed
-    timeout     : seconds before the trial fails automatically (0 = infinite)
-    label       : short name shown in the HUD
-    """
-
     sim: object
     position: List[float]
     radius: float = 0.04
@@ -115,7 +95,6 @@ class ReachTarget:
     timeout: float = 15.0
     label: str = "Target"
 
-    # ── runtime state (not constructor args) ─────────────────────────────────
     _dummy: Optional[int] = field(default=None, init=False, repr=False)
     _elapsed: float = field(default=0.0, init=False, repr=False)
     _dwell_acc: float = field(default=0.0, init=False, repr=False)
@@ -125,23 +104,14 @@ class ReachTarget:
     _started: bool = field(default=False, init=False, repr=False)
     _start_wrist: Optional[List[float]] = field(default=None, init=False, repr=False)
     _settle_frames: int = field(default=0, init=False, repr=False)
-    MOVE_THRESHOLD: float = field(default=0.02, init=False, repr=False)  # metres
-    SETTLE_FRAMES: int = field(
-        default=10, init=False, repr=False
-    )  # skip N frames before latching reference
+    MOVE_THRESHOLD: float = field(default=0.02, init=False, repr=False)
+    SETTLE_FRAMES: int = field(default=10, init=False, repr=False)
 
     def __post_init__(self):
         self._spawn_dummy()
 
-    # ── CoppeliaSim dummy sphere ──────────────────────────────────────────────
     def _spawn_dummy(self):
-        """Create a visible sphere dummy at the target position."""
         sim = self.sim
-        # Use createDummy as the marker — it is always available via ZMQ and
-        # we know it works (the main controller already calls it).
-        # A small dummy is invisible by default; we rely on the HUD for feedback.
-        # If you want a visible sphere in the 3-D viewport you can enable the
-        # block commented out below once you have confirmed the basic flow works.
         self._dummy = sim.createDummy(self.radius * 2)
         if self._dummy is None or self._dummy < 0:
             raise RuntimeError(
@@ -151,20 +121,7 @@ class ReachTarget:
         sim.setObjectPosition(self._dummy, self.position)
         sim.setObjectAlias(self._dummy, self.label)
 
-        # ── Optional: visible sphere (uncomment if createPrimitiveShape works) ──
-        # handle = sim.createPrimitiveShape(0, [self.radius * 2] * 3, 0)
-        # if handle is not None and handle >= 0:
-        #     sim.setObjectPosition(handle, self.position)
-        #     sim.setObjectAlias(handle, self.label + "_sphere")
-        #     sim.setShapeColor(handle, None, 0, [0.2, 0.85, 0.6])
-        #     sim.setObjectInt32Param(handle, 10, 1)
-        #     sim.setObjectInt32Param(handle, 3, 0)
-        #     self._sphere_handle = handle
-        # else:
-        #     self._sphere_handle = None
-
     def remove(self):
-        """Remove the dummy from the sim (call when trial ends)."""
         if self._dummy is not None:
             try:
                 self.sim.removeObject(self._dummy)
@@ -172,23 +129,17 @@ class ReachTarget:
                 pass
             self._dummy = None
 
-    # ── per-step update ───────────────────────────────────────────────────────
     def update(self, wrist_pos: List[float], dt: float) -> Optional[str]:
-        """
-        Call every simulation step.
-
-        Returns 'success', 'timeout', or None (still running).
-        """
         if self._result is not None:
+            # Keep counting down the flash even after result is set,
+            # so _maybe_advance knows when the animation is done.
+            self._flash_t = max(0.0, self._flash_t - dt)
             return self._result
 
-        # Latch first movement: timer doesn't start until the wrist moves.
-        # We skip SETTLE_FRAMES first to let the IK converge before recording
-        # the reference position — otherwise IK settling looks like movement.
         if not self._started:
             self._settle_frames += 1
             if self._settle_frames <= self.SETTLE_FRAMES:
-                return None  # too early to latch reference
+                return None
             if self._start_wrist is None:
                 self._start_wrist = list(wrist_pos)
             moved = math.sqrt(
@@ -214,16 +165,16 @@ class ReachTarget:
                 self._flash_t = 0.6
                 self.remove()
         else:
-            self._dwell_acc = max(0.0, self._dwell_acc - dt * 2)  # decay fast
+            self._dwell_acc = max(0.0, self._dwell_acc - dt * 2)
 
         if self.timeout > 0 and self._elapsed >= self.timeout:
-            self._result = "timeout"
-            self._flash_t = 0.6
-            self.remove()
+            if self._result is None:  # don't overwrite a success
+                self._result = "timeout"
+                self._flash_t = 0.6
+                self.remove()
 
         return self._result
 
-    # ── properties ────────────────────────────────────────────────────────────
     @property
     def finished(self) -> bool:
         return self._result is not None
@@ -237,35 +188,25 @@ class ReachTarget:
         if self.timeout <= 0:
             return float("inf")
         if not self._started:
-            return self.timeout  # show full time while waiting for first move
+            return self.timeout
         return max(0.0, self.timeout - self._elapsed)
 
     @property
     def dwell_fraction(self) -> float:
-        """0–1 progress toward dwell_time."""
         return min(1.0, self._dwell_acc / self.dwell_time)
 
     def distance_to(self, wrist_pos: List[float]) -> float:
         return math.sqrt(sum((wrist_pos[i] - self.position[i]) ** 2 for i in range(3)))
 
-    # ── HUD draw ──────────────────────────────────────────────────────────────
     def draw(
         self, surf: pygame.Surface, wrist_pos: List[float], fonts: dict, dt: float = 0.0
     ):
-        """
-        Draw the reach-target HUD overlay onto `surf`.
-
-        fonts dict should have keys: 'sm', 'md', 'lg'
-        """
         if self.finished and self._flash_t <= 0:
             return
-
-        self._flash_t = max(0.0, self._flash_t - dt)
 
         dist = self.distance_to(wrist_pos)
         W, H = surf.get_size()
 
-        # ── flash overlay on result ───────────────────────────────────────────
         if self._flash_t > 0 and self._result:
             alpha = int(160 * (self._flash_t / 0.6))
             col = C_SUCCESS if self._result == "success" else C_FAIL
@@ -279,14 +220,12 @@ class ReachTarget:
             )
             return
 
-        # ── distance colour ───────────────────────────────────────────────────
         ratio = min(1.0, dist / (self.radius * 6))
         if ratio < 0.4:
             hud_col = _lerp_col(C_HOT, C_WARM, ratio / 0.4)
         else:
             hud_col = _lerp_col(C_WARM, C_IDLE, (ratio - 0.4) / 0.6)
 
-        # ── panel background ──────────────────────────────────────────────────
         panel_w, panel_h = 260, 110
         px, py = W - panel_w - 10, 250
         panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
@@ -294,12 +233,10 @@ class ReachTarget:
         surf.blit(panel, (px, py))
         pygame.draw.rect(surf, hud_col, (px, py, panel_w, panel_h), 1)
 
-        # ── label & dist ──────────────────────────────────────────────────────
         surf.blit(fonts["md"].render(self.label, True, C_TEXT_BRT), (px + 10, py + 8))
         dist_txt = f"dist  {dist * 100:.1f} cm"
         surf.blit(fonts["sm"].render(dist_txt, True, hud_col), (px + 10, py + 28))
 
-        # ── distance bar ──────────────────────────────────────────────────────
         bar_x, bar_y = px + 10, py + 50
         bar_w, bar_h = panel_w - 20, 10
         fill = int(bar_w * (1.0 - ratio))
@@ -307,7 +244,6 @@ class ReachTarget:
         if fill > 0:
             pygame.draw.rect(surf, hud_col, (bar_x, bar_y, fill, bar_h))
 
-        # ── dwell progress ring ───────────────────────────────────────────────
         if self._inside:
             ring_cx, ring_cy = px + panel_w - 28, py + 72
             ring_r = 18
@@ -322,7 +258,6 @@ class ReachTarget:
                 pct, (ring_cx - pct.get_width() // 2, ring_cy - pct.get_height() // 2)
             )
 
-        # ── timer ─────────────────────────────────────────────────────────────
         if self.timeout > 0:
             if not self._started:
                 t_txt = fonts["sm"].render("move to start timer", True, (160, 140, 60))
@@ -337,28 +272,6 @@ class ReachTarget:
 # Experiment  – sequence of ReachTargets
 # ─────────────────────────────────────────────────────────────────────────────
 class Experiment:
-    """
-    Runs a sequence of reach trials and logs results.
-
-    Two ways to create trials:
-
-    1. Explicit positions (original behaviour):
-         Experiment(sim, trials=[{"pos": [x,y,z], "radius": 0.04}, ...])
-
-    2. Random hemisphere (recommended):
-         Experiment.from_hemisphere(sim, shoulder_pos, arm_length, n_trials=6)
-
-    Parameters
-    ----------
-    sim     : CoppeliaSim sim handle
-    trials  : list of dicts with keys:
-                pos        – [x,y,z] world position (required)
-                radius     – success zone metres  (default 0.04)
-                dwell_time – seconds to hold      (default 0.5)
-                timeout    – seconds per trial    (default 15.0)
-                label      – HUD string           (default "Trial N")
-    """
-
     def __init__(self, sim, trials: List[dict]):
         self.sim = sim
         self._trial_defs = trials
@@ -381,24 +294,14 @@ class Experiment:
         dwell_time: float = 0.5,
         timeout: float = 20.0,
         seed: int = None,
-        # hemisphere tuning – forwarded to sample_hemisphere_positions
         min_reach: float = 0.4,
         max_reach: float = 0.85,
         min_elevation: float = -20.0,
         max_elevation: float = 60.0,
-        az_min: float = -45.0,  # quarter-sphere spread
+        az_min: float = -45.0,
         az_max: float = 45.0,
-        az_centre: float = -90.0,  # -90 opens toward -Y (right arm side)
+        az_centre: float = -90.0,
     ) -> "Experiment":
-        """
-        Convenience constructor: generates n_trials random reachable targets.
-
-        Example
-        -------
-        shoulder = sim.getObjectPosition(rightShoulderAbduct, -1)
-        exp = Experiment.from_hemisphere(sim, shoulder, arm_length=0.456,
-                                         n_trials=6, radius=0.04, seed=42)
-        """
         positions = sample_hemisphere_positions(
             shoulder=shoulder_pos,
             arm_length=arm_length,
@@ -445,7 +348,10 @@ class Experiment:
         """Call once per sim step."""
         if self._active is None:
             return
+
         result = self._active.update(wrist_pos, dt)
+
+        # Log result the first time it appears
         if result is not None and not self._result_logged:
             self._result_logged = True
             self._results.append(
@@ -457,10 +363,15 @@ class Experiment:
                 }
             )
             self._index += 1
-            # _spawn_next is called by _maybe_advance once the flash finishes
+
+        # FIX: advance to the next trial once the flash animation finishes.
+        # Previously this was only called from draw() (the pygame path), so
+        # the OpenCV path would log the result and increment _index but never
+        # spawn the next target — leaving _active stuck on the finished trial.
+        self._maybe_advance()
 
     def _maybe_advance(self):
-        """Advance to next trial once flash animation finishes."""
+        """Spawn next trial once the current flash animation has finished."""
         if (
             self._active is not None
             and self._active.finished
@@ -469,16 +380,17 @@ class Experiment:
             self._result_logged = False
             self._spawn_next()
 
-    # ── draw ──────────────────────────────────────────────────────────────────
+    # ── draw (pygame path — unchanged) ────────────────────────────────────────
     def draw(
         self, surf: pygame.Surface, wrist_pos: List[float], fonts: dict, dt: float = 0.0
     ):
         """Call once per pygame frame inside your draw pass."""
+        # _maybe_advance is now driven by update(), but calling it here too is
+        # harmless and keeps the pygame path working identically to before.
         self._maybe_advance()
 
         W, H = surf.get_size()
 
-        # ── progress bar at top ───────────────────────────────────────────────
         total = len(self._trial_defs)
         done = len(self._results)
         bar_w = W - 20
@@ -494,11 +406,9 @@ class Experiment:
         )
         surf.blit(prog_txt, (10, H - 34))
 
-        # ── active trial HUD ──────────────────────────────────────────────────
         if self._active is not None:
             self._active.draw(surf, wrist_pos, fonts, dt)
 
-        # ── finished banner ───────────────────────────────────────────────────
         if self.finished:
             _draw_summary(surf, self._results, fonts)
 
@@ -535,7 +445,6 @@ def _lerp_col(a, b, t):
 
 
 def _draw_arc(surf, colour, rect, start_angle, end_angle, width=2):
-    """pygame.draw.arc wrapper that handles zero-length arcs gracefully."""
     if abs(end_angle - start_angle) < 0.01:
         return
     try:

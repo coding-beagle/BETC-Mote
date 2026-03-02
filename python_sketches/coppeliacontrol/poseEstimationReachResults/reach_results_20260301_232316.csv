@@ -1,0 +1,11 @@
+trial,label,result,duration_s,target_x,target_y,target_z
+1,Trial 1,success,10.971,0.6265,-0.1929,0.9167
+2,Trial 2,success,3.232,0.6738,0.0854,1.1509
+3,Trial 3,success,4.987,0.6229,0.0575,0.869
+4,Trial 4,success,11.963,0.5303,-0.2645,1.2425
+5,Trial 5,success,15.218,0.6201,-0.2079,1.2801
+6,Trial 6,success,6.05,0.6818,-0.2334,1.0101
+7,Trial 7,success,19.822,0.5798,-0.2567,0.8471
+8,Trial 8,success,5.906,0.5273,-0.3502,1.0043
+9,Trial 9,timeout,20.449,0.607,-0.1523,0.8841
+10,Trial 10,timeout,20.404,0.4595,-0.3011,0.8977
