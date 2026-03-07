@@ -461,7 +461,8 @@ finally:
     if results:
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         exp_tag = "transport" if EXP_TYPE == "transport" else "reach"
-        filename = f"controllerReachResults/{exp_tag}_results_{ts}.csv"
+
+        filename = f"controller{exp_tag.capitalize()}Results/{exp_tag}_results_{ts}.csv"
 
         if EXP_TYPE == "transport":
             fieldnames = [
