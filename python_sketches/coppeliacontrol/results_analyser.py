@@ -27,6 +27,13 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy import stats
 
+# ── Disable conflicting matplotlib default keybindings ───────────────────────
+import matplotlib
+
+matplotlib.rcParams["keymap.home"] = []  # was 'h', 'r', 'home'
+matplotlib.rcParams["keymap.back"] = []  # was 'left', 'backspace', 'c', 'b'
+matplotlib.rcParams["keymap.forward"] = []  # was 'right', 'v', 'f'
+
 # ── Colour palettes ───────────────────────────────────────────────────────────
 PALETTE_A = ["#4C72B0", "#55A868", "#64B5CD", "#3A9E7A", "#2E6FA3", "#76B7B2"]  # cool
 PALETTE_B = ["#DD8452", "#C44E52", "#E6A817", "#D45F86", "#C7622E", "#E8734A"]  # warm
@@ -98,12 +105,14 @@ def _ask_title(group_key: str, default: str) -> str:
     return result[0]
 
 
-def load_csv(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path)
-    df = df[df["result"] == "success"].reset_index(drop=True)
+def load_csv(path: Path):
+    """Return (success_df, total_row_count). Raises if no successful rows."""
+    raw = pd.read_csv(path)
+    total = len(raw)
+    df = raw[raw["result"] == "success"].reset_index(drop=True)
     if df.empty:
         raise ValueError(f"No successful runs found in {path.name}")
-    return df
+    return df, total
 
 
 def compute_speeds(df: pd.DataFrame) -> np.ndarray:
@@ -119,7 +128,7 @@ def anova_summary(groups_data: list, metric: str) -> str:
     return f"One-way ANOVA — {metric}\nF = {f:.3f},  p = {p:.4f}  ({sig} at α=0.05)"
 
 
-def _build_entry(name: str, df: pd.DataFrame, color: str) -> dict:
+def _build_entry(name: str, df: pd.DataFrame, color: str, total_rows: int) -> dict:
     if len(df) < 2:
         print(
             f"  ⚠  {name}: only {len(df)} successful trial(s) — skipping speed computation"
@@ -128,7 +137,13 @@ def _build_entry(name: str, df: pd.DataFrame, color: str) -> dict:
     else:
         speeds = compute_speeds(df)
     return dict(
-        name=name, df=df, color=color, durations=df["duration_s"].values, speeds=speeds
+        name=name,
+        df=df,
+        color=color,
+        durations=df["duration_s"].values,
+        speeds=speeds,
+        n_success=len(df),
+        n_total=total_rows,
     )
 
 
@@ -164,12 +179,12 @@ def _ingest_paths(paths: list, group_key: str):
             unique = f"{name}_{n}"
             n += 1
         try:
-            df = load_csv(path)
+            df, total_rows = load_csv(path)
         except Exception as exc:
             messagebox.showerror("Load error", str(exc))
             continue
         color = _color_for(group_key, len(groups[group_key]))
-        entry = _build_entry(unique, df, color)
+        entry = _build_entry(unique, df, color, total_rows)
         groups[group_key].append(entry)
         existing.add(unique)
         print(
@@ -344,7 +359,7 @@ def build_overview_figure():
         dur_xl = "Duration (s)" + (
             "  [1st excluded]" if state["skip_first_move"] else ""
         )
-        spd_xl = "Speed (m / s)" + (
+        spd_xl = "Speed (units / s)" + (
             "  [1st move excluded]" if state["skip_first_move"] else ""
         )
         _style(ax1, dur_xl, "Distribution of Run Durations")
@@ -441,6 +456,14 @@ def build_overview_figure():
     btn_ren_a.on_clicked(lambda e: _rename_group("A"))
     btn_ren_b.on_clicked(lambda e: _rename_group("B"))
 
+    # Return keyboard focus to the figure canvas after every button click so
+    # that H / M keybinds work without the user having to click the plot first.
+    def _refocus(event=None):
+        fig.canvas.get_tk_widget().focus_set()
+
+    for _b in fig._buttons:
+        _b.on_clicked(_refocus)
+
     # ── Hide/show buttons (press H) ──────────────────────────────────────────
     state["btns_visible"] = True
 
@@ -454,9 +477,27 @@ def build_overview_figure():
         fig.subplots_adjust(bottom=0.22 if visible else 0.05)
         fig.canvas.draw_idle()
 
-    fig.canvas.mpl_connect(
-        "key_press_event", lambda e: _toggle_buttons() if e.key == "h" else None
-    )
+    # ── M keybind: toggle success-rate metrics figure ────────────────────────
+    _metrics_state = {"fig": None}
+
+    def _toggle_metrics(event=None):
+        existing = _metrics_state["fig"]
+        if existing is not None and plt.fignum_exists(existing.number):
+            plt.close(existing)
+            _metrics_state["fig"] = None
+        else:
+            mfig = build_metrics_figure()
+            _metrics_state["fig"] = mfig
+            mfig.canvas.manager.show()  # makes the window appear when plt.show() is already running
+            mfig.canvas.draw_idle()
+
+    def _on_key(event):
+        if event.key == "h":
+            _toggle_buttons()
+        elif event.key == "m":
+            _toggle_metrics()
+
+    fig.canvas.mpl_connect("key_press_event", _on_key)
 
     redraw()
     return fig
@@ -604,6 +645,154 @@ def build_comparison_figure():
     ax_sl.spines[["top", "right"]].set_visible(False)
 
     fig.tight_layout()
+    return fig
+
+
+# ── Metrics / success-rate figure (press M) ───────────────────────────────────
+
+
+def build_metrics_figure():
+    """
+    Show success rates for every experiment, grouped by A and B.
+    Layout:
+      Row 0: one pie chart per group (pooled success vs failure)
+      Row 1: horizontal bar chart — per-experiment success rate, colour-coded by group
+    Press M again to close.
+    """
+    has_b = bool(groups["B"])
+    n_cols = 2 if has_b else 1
+    ta, tb = group_titles["A"], group_titles["B"]
+
+    fig, axes = plt.subplots(
+        2,
+        n_cols,
+        figsize=(7 * n_cols, 9),
+        num="Success Rate",
+        gridspec_kw={"height_ratios": [1, 1.6]},
+    )
+    if n_cols == 1:
+        axes = axes[:, np.newaxis]  # make indexing uniform
+
+    fig.suptitle("Success Rate Analysis", fontsize=14, fontweight="bold")
+    fig.patch.set_facecolor(BG)
+
+    col_info = [("A", ta, PALETTE_A[0])]
+    if has_b:
+        col_info.append(("B", tb, PALETTE_B[0]))
+
+    # ── Row 0: Pie charts ────────────────────────────────────────────────────
+    for col_idx, (gk, title, col) in enumerate(col_info):
+        ax = axes[0, col_idx]
+        ax.set_facecolor(BG)
+        entries = groups[gk]
+        total = sum(e["n_total"] for e in entries)
+        success = sum(e["n_success"] for e in entries)
+        failure = total - success
+        rate = success / total * 100 if total else 0
+
+        wedge_colors = [col, "#D9D9D9"]
+        wedges, texts, autotexts = ax.pie(
+            [success, failure],
+            labels=["Success", "Failure"],
+            colors=wedge_colors,
+            autopct="%1.1f%%",
+            startangle=90,
+            wedgeprops=dict(edgecolor="white", linewidth=2),
+            textprops=dict(fontsize=10),
+        )
+        for at in autotexts:
+            at.set_fontsize(11)
+            at.set_fontweight("bold")
+        ax.set_title(
+            f"{title}\n{success}/{total} successful  ({rate:.1f}%)",
+            fontsize=11,
+            fontweight="bold",
+            pad=12,
+        )
+
+    # # ── Row 1: Horizontal bar chart — per experiment ─────────────────────────
+    # ax_bar = fig.add_subplot(2, 1, 2)  # spans full width
+    # # Remove the individual col axes from row 1 that subplots created
+    # for col_idx in range(n_cols):
+    #     axes[1, col_idx].remove()
+
+    # ax_bar.set_facecolor(BG)
+
+    # all_entries = []
+    # for gk, title, col in col_info:
+    #     for e in groups[gk]:
+    #         all_entries.append(
+    #             (e["name"], e["n_success"], e["n_total"], e["color"], gk, title)
+    #         )
+
+    # Sort: Group A first, then B; within group alphabetical
+    # all_entries.sort(key=lambda x: (x[4], x[0]))
+
+    # names = [e[0] for e in all_entries]
+    # rates = [e[1] / e[2] * 100 if e[2] else 0 for e in all_entries]
+    # totals = [e[2] for e in all_entries]
+    # colors = [e[3] for e in all_entries]
+    # g_labels = [e[5] for e in all_entries]
+
+    # y = np.arange(len(names))
+    # bars = ax_bar.barh(
+    #     y, rates, color=colors, alpha=0.75, edgecolor="white", linewidth=1.2
+    # )
+
+    # # Annotate each bar with "X/N (R%)"
+    # for i, (bar, entry) in enumerate(zip(bars, all_entries)):
+    #     n_ok, n_tot = entry[1], entry[2]
+    #     r = n_ok / n_tot * 100 if n_tot else 0
+    #     ax_bar.text(
+    #         min(r + 1.5, 101),
+    #         i,
+    #         f"{n_ok}/{n_tot}  ({r:.1f}%)",
+    #         va="center",
+    #         ha="left",
+    #         fontsize=9,
+    #         color="#333333",
+    #     )
+
+    # # Draw a faint vertical line at 100 %
+    # ax_bar.axvline(100, color="#AAAAAA", linewidth=1, linestyle="--", alpha=0.6)
+
+    # Group separators: draw a horizontal rule between A and B
+    # if has_b:
+    #     n_a = sum(1 for e in all_entries if e[4] == "A")
+    #     ax_bar.axhline(n_a - 0.5, color="#888888", linewidth=1.2, linestyle=":")
+
+    #     # Group label annotations on the right margin
+    #     ax_bar.text(
+    #         105,
+    #         (n_a - 1) / 2,
+    #         ta,
+    #         va="center",
+    #         ha="left",
+    #         fontsize=10,
+    #         color=PALETTE_A[0],
+    #         fontweight="bold",
+    #     )
+    #     ax_bar.text(
+    #         105,
+    #         n_a + (len(names) - n_a - 1) / 2,
+    #         tb,
+    #         va="center",
+    #         ha="left",
+    #         fontsize=10,
+    #         color=PALETTE_B[0],
+    #         fontweight="bold",
+    #     )
+
+    # ax_bar.set_yticks(y)
+    # ax_bar.set_yticklabels(names, fontsize=9)
+    # ax_bar.set_xlim(0, 115)
+    # ax_bar.set_xlabel("Success Rate (%)", fontsize=11)
+    # ax_bar.set_title("Per-Experiment Success Rate", fontsize=12, fontweight="bold")
+    # ax_bar.invert_yaxis()
+    # ax_bar.spines[["top", "right"]].set_visible(False)
+    # ax_bar.grid(axis="x", linestyle="--", alpha=0.4)
+
+    # fig.tight_layout(rect=[0, 0, 1, 0.95])
     return fig
 
 
