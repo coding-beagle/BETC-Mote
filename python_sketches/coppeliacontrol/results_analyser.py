@@ -192,48 +192,40 @@ def build_overview_figure():
     ax1 = fig.add_subplot(1, 2, 1)
     ax2 = fig.add_subplot(1, 2, 2)
 
+    # Button axes — stored so we can show/hide them
+    ax_btn_mode = fig.add_axes([0.05, 0.05, 0.14, 0.07])
+    ax_btn_std = fig.add_axes([0.21, 0.05, 0.13, 0.07])
+    ax_btn_skip = fig.add_axes([0.36, 0.05, 0.14, 0.07])
+    ax_btn_add_b = fig.add_axes([0.52, 0.05, 0.13, 0.07])
+    ax_btn_add_a = fig.add_axes([0.67, 0.05, 0.10, 0.07])
+    ax_btn_ren_a = fig.add_axes([0.79, 0.05, 0.09, 0.07])
+    ax_btn_ren_b = fig.add_axes([0.90, 0.05, 0.09, 0.07])
+
     btn_mode = Button(
-        fig.add_axes([0.05, 0.05, 0.14, 0.07]),
-        "Switch to: Combined",
-        color="#E8EDF7",
-        hovercolor="#C8D4F0",
+        ax_btn_mode, "Switch to: Combined", color="#E8EDF7", hovercolor="#C8D4F0"
     )
     btn_std = Button(
-        fig.add_axes([0.21, 0.05, 0.13, 0.07]),
-        "Standardise: Off",
-        color="#F0EDE8",
-        hovercolor="#DDD5C8",
+        ax_btn_std, "Standardise: Off", color="#F0EDE8", hovercolor="#DDD5C8"
     )
     btn_skip = Button(
-        fig.add_axes([0.36, 0.05, 0.14, 0.07]),
-        "Skip 1st Move: Off",
-        color="#F0EDE8",
-        hovercolor="#DDD5C8",
+        ax_btn_skip, "Skip 1st Move: Off", color="#F0EDE8", hovercolor="#DDD5C8"
     )
     btn_add_b = Button(
-        fig.add_axes([0.52, 0.05, 0.13, 0.07]),
-        "Add Group B…",
-        color="#FFF3E0",
-        hovercolor="#FFE0B2",
+        ax_btn_add_b, "Add Group B…", color="#FFF3E0", hovercolor="#FFE0B2"
     )
-    btn_add_a = Button(
-        fig.add_axes([0.67, 0.05, 0.10, 0.07]),
-        "Add to A…",
-        color="#E3F2FD",
-        hovercolor="#BBDEFB",
-    )
-    btn_ren_a = Button(
-        fig.add_axes([0.79, 0.05, 0.09, 0.07]),
-        "Rename A",
-        color="#F3E5F5",
-        hovercolor="#E1BEE7",
-    )
-    btn_ren_b = Button(
-        fig.add_axes([0.90, 0.05, 0.09, 0.07]),
-        "Rename B",
-        color="#FCE4EC",
-        hovercolor="#F8BBD0",
-    )
+    btn_add_a = Button(ax_btn_add_a, "Add to A…", color="#E3F2FD", hovercolor="#BBDEFB")
+    btn_ren_a = Button(ax_btn_ren_a, "Rename A", color="#F3E5F5", hovercolor="#E1BEE7")
+    btn_ren_b = Button(ax_btn_ren_b, "Rename B", color="#FCE4EC", hovercolor="#F8BBD0")
+
+    _btn_axes = [
+        ax_btn_mode,
+        ax_btn_std,
+        ax_btn_skip,
+        ax_btn_add_b,
+        ax_btn_add_a,
+        ax_btn_ren_a,
+        ax_btn_ren_b,
+    ]
 
     for b in (btn_mode, btn_std, btn_skip, btn_add_b, btn_add_a, btn_ren_a, btn_ren_b):
         b.label.set_fontsize(9)
@@ -352,7 +344,7 @@ def build_overview_figure():
         dur_xl = "Duration (s)" + (
             "  [1st excluded]" if state["skip_first_move"] else ""
         )
-        spd_xl = "Speed (units / s)" + (
+        spd_xl = "Speed (m / s)" + (
             "  [1st move excluded]" if state["skip_first_move"] else ""
         )
         _style(ax1, dur_xl, "Distribution of Run Durations")
@@ -448,6 +440,23 @@ def build_overview_figure():
     )
     btn_ren_a.on_clicked(lambda e: _rename_group("A"))
     btn_ren_b.on_clicked(lambda e: _rename_group("B"))
+
+    # ── Hide/show buttons (press H) ──────────────────────────────────────────
+    state["btns_visible"] = True
+
+    def _toggle_buttons(event=None):
+        visible = not state["btns_visible"]
+        state["btns_visible"] = visible
+        for ax in _btn_axes:
+            ax.set_visible(visible)
+        # Shrink bottom margin when hidden so plots use the full height,
+        # restore it when shown so buttons don't overlap the axes.
+        fig.subplots_adjust(bottom=0.22 if visible else 0.05)
+        fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect(
+        "key_press_event", lambda e: _toggle_buttons() if e.key == "h" else None
+    )
 
     redraw()
     return fig
