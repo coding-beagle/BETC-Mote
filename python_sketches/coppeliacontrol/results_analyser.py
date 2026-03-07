@@ -1,16 +1,19 @@
 """
 Robot Arm Experiment Analyser
 ──────────────────────────────
-Run this script and use the file picker to select one or more CSV files.
+Run this script and use the file picker to select one or more CSV files (Group A).
 
-Figure 1 — Overview (all experiments on one figure):
+Figure 1 — Overview:
   • Left:  Overlaid normal distribution curves of successful run durations
-  • Right: Overlaid average-speed line charts per trial
+  • Right: Distribution of within-run speeds
+  Group A = cool colours (blues/greens), Group B = warm colours (oranges/reds).
+  Toggle button switches between per-experiment overlays and combined view.
+  "Add Group B…" button loads a second set of CSVs for comparison.
 
-Figure 2 — Comparison (shown when >1 file selected):
-  • Overlaid duration KDE curves
-  • Duration box-plot + Speed box-plot, each annotated with ANOVA results
-  • Overlaid speed-per-trial line chart
+Figure 2 — Comparison (shown when Group B is loaded):
+  • Group A pooled vs Group B pooled for durations and speeds
+  • Duration KDE overlay, box-plots, speed box-plot — all annotated with ANOVA
+  • Group mean speed per move with ±1 SD band
 """
 
 import sys
@@ -24,21 +27,75 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy import stats
 
-# ── Colour palette (cycles across files) ─────────────────────────────────────
-PALETTE = [
-    "#4C72B0",
-    "#DD8452",
-    "#55A868",
-    "#C44E52",
-    "#8172B2",
-    "#937860",
-    "#DA8BC3",
-    "#8C8C8C",
-]
+# ── Colour palettes ───────────────────────────────────────────────────────────
+PALETTE_A = ["#4C72B0", "#55A868", "#64B5CD", "#3A9E7A", "#2E6FA3", "#76B7B2"]  # cool
+PALETTE_B = ["#DD8452", "#C44E52", "#E6A817", "#D45F86", "#C7622E", "#E8734A"]  # warm
+
 BG = "#F8F9FA"
 
+# ── Shared state ──────────────────────────────────────────────────────────────
+groups: dict = {"A": [], "B": []}  # each entry: name/df/color/durations/speeds
+group_titles: dict = {"A": "Group A", "B": "Group B"}  # user-editable display names
+_comparison_fig = None
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _color_for(group: str, index: int) -> str:
+    palette = PALETTE_A if group == "A" else PALETTE_B
+    return palette[index % len(palette)]
+
+
+def _tk_root() -> tk.Tk:
+    """Return the single persistent hidden Tk root, creating it if needed."""
+    if not hasattr(_tk_root, "_inst") or not _tk_root._inst.winfo_exists():
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        _tk_root._inst = root
+    return _tk_root._inst
+
+
+def _ask_title(group_key: str, default: str) -> str:
+    """Show a modal Toplevel dialog asking the user to name a group."""
+    result = [default]
+    root = _tk_root()
+
+    win = tk.Toplevel(root)
+    win.title("Name this group")
+    win.resizable(False, False)
+    win.attributes("-topmost", True)
+    win.grab_set()
+
+    tk.Label(
+        win, text="Enter a display name for this group:", font=("Helvetica", 11), pady=8
+    ).pack(padx=16)
+
+    var = tk.StringVar(value=default)
+    entry = tk.Entry(win, textvariable=var, font=("Helvetica", 11), width=28)
+    entry.pack(padx=16, pady=4)
+    entry.select_range(0, tk.END)
+    entry.focus_set()
+
+    def _ok(event=None):
+        val = var.get().strip()
+        result[0] = val if val else default
+        win.grab_release()
+        win.destroy()
+
+    def _cancel(event=None):
+        win.grab_release()
+        win.destroy()
+
+    btn_frame = tk.Frame(win)
+    btn_frame.pack(pady=10)
+    tk.Button(btn_frame, text="OK", width=10, command=_ok).pack(side=tk.LEFT, padx=6)
+    tk.Button(btn_frame, text="Cancel", width=10, command=_cancel).pack(
+        side=tk.LEFT, padx=6
+    )
+    win.bind("<Return>", _ok)
+    win.bind("<Escape>", _cancel)
+
+    root.wait_window(win)
+    return result[0]
 
 
 def load_csv(path: Path) -> pd.DataFrame:
@@ -50,125 +107,164 @@ def load_csv(path: Path) -> pd.DataFrame:
 
 
 def compute_speeds(df: pd.DataFrame) -> np.ndarray:
-    """Return within-run speeds (units/s): displacement / duration for each
-    consecutive pair of targets. The first trial of each run is dropped since
-    there is no prior position to diff against — cross-run boundaries are
-    never included."""
     pos = df[["target_x", "target_y", "target_z"]].values
     displacements = np.linalg.norm(np.diff(pos, axis=0), axis=1)
     durations = df["duration_s"].values[1:]
     return displacements / durations
 
 
-def anova_summary(groups: list, metric: str) -> str:
-    """Run one-way ANOVA and return a formatted string."""
-    f, p = stats.f_oneway(*groups)
+def anova_summary(groups_data: list, metric: str) -> str:
+    f, p = stats.f_oneway(*groups_data)
     sig = "✓ significant" if p < 0.05 else "✗ not significant"
-    return f"One-way ANOVA — {metric}\n" f"F = {f:.3f},  p = {p:.4f}  ({sig} at α=0.05)"
+    return f"One-way ANOVA — {metric}\nF = {f:.3f},  p = {p:.4f}  ({sig} at α=0.05)"
 
 
-# ── Overview figure with toggle: per-experiment ↔ combined ───────────────────
+def _build_entry(name: str, df: pd.DataFrame, color: str) -> dict:
+    if len(df) < 2:
+        print(
+            f"  ⚠  {name}: only {len(df)} successful trial(s) — skipping speed computation"
+        )
+        speeds = np.array([])
+    else:
+        speeds = compute_speeds(df)
+    return dict(
+        name=name, df=df, color=color, durations=df["duration_s"].values, speeds=speeds
+    )
 
 
-def plot_overview(datasets: list):
-    """
-    datasets: list of (name, df, color)
-    Both panels are normal distributions:
-      Left:  distribution of run durations
-      Right: distribution of within-run speeds
-                (cross-run boundaries are never included)
-    Toggle button switches between per-experiment overlays and combined view.
-    """
-    from matplotlib.widgets import Button
+def _pool_group(group_key: str):
+    """Return (pooled_durations, pooled_speeds) for all experiments in a group."""
+    entries = groups[group_key]
+    durs = (
+        np.concatenate([e["durations"] for e in entries]) if entries else np.array([])
+    )
+    spds_list = [e["speeds"] for e in entries if len(e["speeds"]) > 0]
+    spds = np.concatenate(spds_list) if spds_list else np.array([])
+    return durs, spds
 
-    COMBINED_COLOR = "#4C72B0"
 
-    # Pre-compute per-experiment data — skip any experiment with fewer than
-    # 2 successful trials (can't compute even one speed value)
-    exp_data = []
-    for name, df, color in datasets:
-        durations = df["duration_s"].values
-        if len(df) < 2:
-            print(
-                f"  ⚠  {name}: only {len(df)} successful trial(s) — "
-                f"skipping speed computation for this file"
-            )
-            speeds = np.array([])
-        else:
-            speeds = compute_speeds(df)  # within-run only; first trial dropped
-        exp_data.append(
-            dict(name=name, color=color, durations=durations, speeds=speeds)
+def _load_files_dialog(title: str) -> list:
+    root = _tk_root()
+    paths = filedialog.askopenfilenames(
+        parent=root,
+        title=title,
+        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+    )
+    return [Path(p) for p in paths]
+
+
+def _ingest_paths(paths: list, group_key: str):
+    """Load CSVs into the given group, avoiding name collisions across all groups."""
+    existing = {e["name"] for g in groups.values() for e in g}
+    for path in paths:
+        name = path.stem
+        unique = name
+        n = 2
+        while unique in existing:
+            unique = f"{name}_{n}"
+            n += 1
+        try:
+            df = load_csv(path)
+        except Exception as exc:
+            messagebox.showerror("Load error", str(exc))
+            continue
+        color = _color_for(group_key, len(groups[group_key]))
+        entry = _build_entry(unique, df, color)
+        groups[group_key].append(entry)
+        existing.add(unique)
+        print(
+            f"  ✓ Group {group_key}: {unique}  "
+            f"(n={len(entry['durations'])}  μ={entry['durations'].mean():.3f}s)"
         )
 
-    # Note: combined pools are computed fresh inside redraw() so that
-    # _active_durations / _active_speeds are always respected.
+
+# ── Overview figure ───────────────────────────────────────────────────────────
+
+
+def build_overview_figure():
+    from matplotlib.widgets import Button
 
     state = {"combined": False, "standardised": False, "skip_first_move": False}
 
-    n_exp = len(exp_data)
-    # Scale bottom margin so legends + buttons never overlap the plot area
-    bottom_margin = min(0.08 + n_exp * 0.028, 0.45)
-
-    fig = plt.figure(figsize=(14, 7))
-    fig.subplots_adjust(
-        left=0.07, right=0.97, top=0.91, bottom=bottom_margin, wspace=0.35
-    )
+    fig = plt.figure(figsize=(14, 7), num="Overview")
+    fig.subplots_adjust(left=0.07, right=0.97, top=0.91, bottom=0.22, wspace=0.35)
 
     ax1 = fig.add_subplot(1, 2, 1)
     ax2 = fig.add_subplot(1, 2, 2)
-    ax1.set_facecolor(BG)
-    ax2.set_facecolor(BG)
 
-    # ── Buttons — placed well below the plot area ──
-    btn_y = bottom_margin * 0.18
-    btn_height = min(0.06, bottom_margin * 0.35)
-    ax_btn_mode = fig.add_axes([0.15, btn_y, 0.20, btn_height])
-    ax_btn_std = fig.add_axes([0.40, btn_y, 0.20, btn_height])
-    ax_btn_skip = fig.add_axes([0.65, btn_y, 0.20, btn_height])
     btn_mode = Button(
-        ax_btn_mode, "Switch to: Combined", color="#E8EDF7", hovercolor="#C8D4F0"
+        fig.add_axes([0.05, 0.05, 0.14, 0.07]),
+        "Switch to: Combined",
+        color="#E8EDF7",
+        hovercolor="#C8D4F0",
     )
     btn_std = Button(
-        ax_btn_std, "Standardise: Off", color="#F0EDE8", hovercolor="#DDD5C8"
+        fig.add_axes([0.21, 0.05, 0.13, 0.07]),
+        "Standardise: Off",
+        color="#F0EDE8",
+        hovercolor="#DDD5C8",
     )
     btn_skip = Button(
-        ax_btn_skip, "Skip 1st Move: Off", color="#F0EDE8", hovercolor="#DDD5C8"
+        fig.add_axes([0.36, 0.05, 0.14, 0.07]),
+        "Skip 1st Move: Off",
+        color="#F0EDE8",
+        hovercolor="#DDD5C8",
     )
-    btn_mode.label.set_fontsize(10)
-    btn_std.label.set_fontsize(10)
-    btn_skip.label.set_fontsize(10)
-    # Keep strong references so Python doesn't garbage collect the Button
-    # objects (which would silently disconnect click callbacks)
-    fig._buttons = [btn_mode, btn_std, btn_skip]
+    btn_add_b = Button(
+        fig.add_axes([0.52, 0.05, 0.13, 0.07]),
+        "Add Group B…",
+        color="#FFF3E0",
+        hovercolor="#FFE0B2",
+    )
+    btn_add_a = Button(
+        fig.add_axes([0.67, 0.05, 0.10, 0.07]),
+        "Add to A…",
+        color="#E3F2FD",
+        hovercolor="#BBDEFB",
+    )
+    btn_ren_a = Button(
+        fig.add_axes([0.79, 0.05, 0.09, 0.07]),
+        "Rename A",
+        color="#F3E5F5",
+        hovercolor="#E1BEE7",
+    )
+    btn_ren_b = Button(
+        fig.add_axes([0.90, 0.05, 0.09, 0.07]),
+        "Rename B",
+        color="#FCE4EC",
+        hovercolor="#F8BBD0",
+    )
 
-    def _maybe_standardise(data):
-        """Return (plot_data, mu, sigma).
-        If standardised, returns z-scores; original mu/sigma always returned
-        for the legend so the user still sees real units.
-        If sigma == 0 (single point or all-identical values), standardisation
-        is skipped and the raw data is returned."""
+    for b in (btn_mode, btn_std, btn_skip, btn_add_b, btn_add_a, btn_ren_a, btn_ren_b):
+        b.label.set_fontsize(9)
+    fig._buttons = [
+        btn_mode,
+        btn_std,
+        btn_skip,
+        btn_add_b,
+        btn_add_a,
+        btn_ren_a,
+        btn_ren_b,
+    ]
+
+    def _maybe_std(data):
         mu, sigma = data.mean(), data.std()
         if state["standardised"] and sigma > 0:
             return (data - mu) / sigma, mu, sigma
         return data, mu, sigma
 
-    def _draw_normal(ax, data, color, label, add_hist=False):
-        """Plot a fitted normal curve (+ optional histogram) on ax,
-        applying standardisation if active.
-        Silently skips if data is empty or has zero variance."""
+    def _draw_normal(ax, data, color, label, linestyle="-", add_hist=False):
         if data is None or len(data) == 0:
             return
-        plot_data, mu, sigma = _maybe_standardise(data)
-        p_mu = plot_data.mean()
-        p_sigma = plot_data.std()
+        plot_data, mu, sigma = _maybe_std(data)
+        p_mu, p_sigma = plot_data.mean(), plot_data.std()
         if p_sigma == 0 or not np.isfinite(p_sigma):
-            # Can't fit a normal — just draw a vertical line at the single value
             ax.axvline(
                 p_mu,
                 color=color,
                 linewidth=2.2,
                 linestyle="--",
-                label=f"{label}  μ={mu:.3f}  (n=1, no spread)",
+                label=f"{label}  μ={mu:.3f}  (no spread)",
             )
             return
         pad = max(p_sigma * 2, abs(p_mu) * 0.1, 1e-6)
@@ -180,7 +276,7 @@ def plot_overview(datasets: list):
                 bins=bins,
                 density=True,
                 color=color,
-                alpha=0.25,
+                alpha=0.18,
                 edgecolor="white",
                 linewidth=0.8,
             )
@@ -189,6 +285,7 @@ def plot_overview(datasets: list):
             stats.norm.pdf(x, p_mu, p_sigma),
             color=color,
             linewidth=2.2,
+            linestyle=linestyle,
             label=f"{label}  μ={mu:.3f}  σ={sigma:.3f}",
         )
         ax.axvline(p_mu, color=color, linestyle=":", linewidth=1.2, alpha=0.6)
@@ -199,86 +296,90 @@ def plot_overview(datasets: list):
         a.set_xlabel(xlabel, fontsize=11)
         a.set_ylabel("Probability Density", fontsize=11)
         a.set_title(title, fontsize=12, fontweight="bold")
-        # Combined mode has one entry — keep it inside the axes so it isn't
-        # hidden behind the buttons.  Per-experiment mode pushes it below to
-        # avoid overlapping the (potentially many) curves.
+        n_total = sum(len(groups[k]) for k in ("A", "B"))
         if state["combined"]:
-            a.legend(
-                fontsize=9,
-                loc="upper right",
-                frameon=True,
-                framealpha=0.9,
-            )
+            a.legend(fontsize=9, loc="upper right", frameon=True, framealpha=0.9)
         else:
             a.legend(
                 fontsize=9,
                 loc="upper center",
                 bbox_to_anchor=(0.5, -0.18),
-                ncol=max(1, min(3, n_exp // 2 + 1)),
+                ncol=max(1, min(3, n_total // 2 + 1)),
                 frameon=True,
                 framealpha=0.9,
             )
         a.grid(axis="y", linestyle="--", alpha=0.4)
         a.spines[["top", "right"]].set_visible(False)
+        a.set_facecolor(BG)
 
-    def _active_speeds(speeds):
-        """Return speeds with the first movement optionally removed."""
-        if state["skip_first_move"] and len(speeds) > 1:
-            return speeds[1:]
-        return speeds
-
-    def _active_durations(durations):
-        """Return durations with the first trial optionally removed."""
-        if state["skip_first_move"] and len(durations) > 1:
-            return durations[1:]
-        return durations
+    def _active(arr):
+        if state["skip_first_move"] and len(arr) > 1:
+            return arr[1:]
+        return arr
 
     def redraw():
         ax1.cla()
         ax2.cla()
-        ax1.set_facecolor(BG)
-        ax2.set_facecolor(BG)
+
         if state["combined"]:
-            dur_pool = [_active_durations(e["durations"]) for e in exp_data]
-            spd_pool = [
-                _active_speeds(e["speeds"]) for e in exp_data if len(e["speeds"]) > 0
-            ]
-            combined_dur = np.concatenate(dur_pool) if dur_pool else np.array([])
-            combined_spd = np.concatenate(spd_pool) if spd_pool else np.array([])
-            _draw_normal(ax1, combined_dur, COMBINED_COLOR, "All trials", add_hist=True)
-            _draw_normal(ax2, combined_spd, COMBINED_COLOR, "All trials", add_hist=True)
-            subtitle = "Combined"
+            # One pooled curve per group
+            for gk in ("A", "B"):
+                if not groups[gk]:
+                    continue
+                col = groups[gk][0]["color"]
+                lbl = group_titles[gk]
+                durs, spds = _pool_group(gk)
+                _draw_normal(ax1, _active(durs), col, lbl, add_hist=True)
+                _draw_normal(ax2, _active(spds), col, lbl, add_hist=True)
+            subtitle = "Combined (per group)"
         else:
-            for e in exp_data:
-                _draw_normal(
-                    ax1, _active_durations(e["durations"]), e["color"], e["name"]
-                )
-                _draw_normal(ax2, _active_speeds(e["speeds"]), e["color"], e["name"])
+            # One curve per experiment; Group B dashed to distinguish at a glance
+            for gk in ("A", "B"):
+                ls = "-" if gk == "A" else "--"
+                for e in groups[gk]:
+                    _draw_normal(
+                        ax1,
+                        _active(e["durations"]),
+                        e["color"],
+                        e["name"],
+                        linestyle=ls,
+                    )
+                    _draw_normal(
+                        ax2, _active(e["speeds"]), e["color"], e["name"], linestyle=ls
+                    )
             subtitle = "Per Experiment"
-        dur_xlabel = "Duration (s)"
-        spd_xlabel = "Speed (units / s)"
-        if state["skip_first_move"]:
-            dur_xlabel += "  [1st trial excluded]"
-            spd_xlabel += "  [1st move excluded]"
-        _style(ax1, dur_xlabel, "Distribution of Run Durations")
-        _style(ax2, spd_xlabel, "Distribution of Within-Run Speeds")
-        tags = []
-        if state["standardised"]:
-            tags.append("standardised")
-        if state["skip_first_move"]:
-            tags.append("1st excluded")
+
+        dur_xl = "Duration (s)" + (
+            "  [1st excluded]" if state["skip_first_move"] else ""
+        )
+        spd_xl = "Speed (units / s)" + (
+            "  [1st move excluded]" if state["skip_first_move"] else ""
+        )
+        _style(ax1, dur_xl, "Distribution of Run Durations")
+        _style(ax2, spd_xl, "Distribution of Within-Run Speeds")
+
+        tags = (["standardised"] if state["standardised"] else []) + (
+            ["1st excluded"] if state["skip_first_move"] else []
+        )
         tag_str = f"  [{', '.join(tags)}]" if tags else ""
+        n_a, n_b = len(groups["A"]), len(groups["B"])
+        ta, tb = group_titles["A"], group_titles["B"]
+        group_str = f"{ta}: {n_a} exp." + (
+            f"  |  {tb}: {n_b} exp." if n_b else "  (add Group B to compare)"
+        )
         fig.suptitle(
-            f"Robot Arm Experiments — {subtitle}{tag_str}",
-            fontsize=14,
+            f"Robot Arm Experiments — {subtitle}{tag_str}\n{group_str}",
+            fontsize=13,
             fontweight="bold",
         )
         fig.canvas.draw_idle()
 
+    fig._redraw = redraw
+
     def on_toggle_mode(event):
         state["combined"] = not state["combined"]
         btn_mode.label.set_text(
-            "Switch to: Per Experiment" if state["combined"] else "Switch to: Combined"
+            "Switch to: Per Exp." if state["combined"] else "Switch to: Combined"
         )
         redraw()
 
@@ -300,51 +401,98 @@ def plot_overview(datasets: list):
         btn_skip.hovercolor = "#B8E0B8" if state["skip_first_move"] else "#DDD5C8"
         redraw()
 
+    def _add_and_refresh(group_key: str, title: str):
+        global _comparison_fig
+        paths = _load_files_dialog(title)
+        if not paths:
+            return
+        # Ask for a group title the first time files are added to this group
+        if not groups[group_key]:
+            default = "Group A" if group_key == "A" else "Group B"
+            group_titles[group_key] = _ask_title(group_key, default)
+        _ingest_paths(paths, group_key)
+        redraw()
+        # Rebuild comparison figure whenever both groups have data
+        if groups["A"] and groups["B"]:
+            if _comparison_fig is not None:
+                try:
+                    plt.close(_comparison_fig)
+                except Exception:
+                    pass
+            _comparison_fig = build_comparison_figure()
+            _comparison_fig.canvas.draw_idle()
+            _print_anova()
+
+    def _rename_group(group_key: str):
+        global _comparison_fig
+        current = group_titles[group_key]
+        new_title = _ask_title(group_key, current)
+        if new_title == current:
+            return
+        group_titles[group_key] = new_title
+        redraw()
+        if groups["A"] and groups["B"] and _comparison_fig is not None:
+            try:
+                plt.close(_comparison_fig)
+            except Exception:
+                pass
+            _comparison_fig = build_comparison_figure()
+            _comparison_fig.canvas.draw_idle()
+
     btn_mode.on_clicked(on_toggle_mode)
     btn_std.on_clicked(on_toggle_std)
     btn_skip.on_clicked(on_toggle_skip)
+    btn_add_b.on_clicked(lambda e: _add_and_refresh("B", "Select Group B CSV file(s)"))
+    btn_add_a.on_clicked(
+        lambda e: _add_and_refresh("A", "Add more Group A CSV file(s)")
+    )
+    btn_ren_a.on_clicked(lambda e: _rename_group("A"))
+    btn_ren_b.on_clicked(lambda e: _rename_group("B"))
+
     redraw()
+    return fig
 
 
-# ── Multi-file comparison figure ──────────────────────────────────────────────
+# ── Comparison figure (Group A pooled vs Group B pooled) ──────────────────────
 
 
-def plot_comparison(datasets: list):
-    """
-    datasets: list of (name, df, color)
-    Produces:
-      Row 1: overlaid duration KDE curves (full width)
-      Row 2: duration box-plot + speed box-plot (with ANOVA annotations)
-      Row 3: overlaid speed-per-trial line chart (full width)
-    """
-    names = [d[0] for d in datasets]
-    dfs = [d[1] for d in datasets]
-    colors = [d[2] for d in datasets]
-    dur_groups = [df["duration_s"].values for df in dfs]
-    speed_groups = [compute_speeds(df) for df in dfs]
+def build_comparison_figure():
+    dur_a, spd_a = _pool_group("A")
+    dur_b, spd_b = _pool_group("B")
 
-    fig = plt.figure(figsize=(16, 14))
-    fig.suptitle("Cross-Experiment Comparison", fontsize=15, fontweight="bold")
+    n_a_exp, n_b_exp = len(groups["A"]), len(groups["B"])
+    ta, tb = group_titles["A"], group_titles["B"]
+    label_a = f"{ta}  ({n_a_exp} exp, n={len(dur_a)})"
+    label_b = f"{tb}  ({n_b_exp} exp, n={len(dur_b)})"
+    col_a, col_b = PALETTE_A[0], PALETTE_B[0]
+
+    fig = plt.figure(figsize=(16, 14), num="Comparison")
+    fig.suptitle(f"{ta} vs {tb} — Pooled Comparison", fontsize=15, fontweight="bold")
     gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.65, wspace=0.35)
 
-    # ── Row 0: Overlaid duration KDE curves ──
+    # ── Row 0: Duration KDE overlay ──
     ax_kde = fig.add_subplot(gs[0, :])
     ax_kde.set_facecolor(BG)
-    for name, durs, col in zip(names, dur_groups, colors):
+    for durs, col, lbl in [(dur_a, col_a, label_a), (dur_b, col_b, label_b)]:
         mu, sigma = durs.mean(), durs.std()
         x = np.linspace(max(0, durs.min() - 2), durs.max() + 2, 300)
         ax_kde.plot(
             x,
             stats.norm.pdf(x, mu, sigma),
             color=col,
-            linewidth=2.2,
-            label=f"{name}  μ={mu:.2f}s  σ={sigma:.2f}s",
+            linewidth=2.5,
+            label=f"{lbl}  μ={mu:.2f}s  σ={sigma:.2f}s",
         )
-        ax_kde.axvline(mu, color=col, linestyle=":", linewidth=1.2, alpha=0.6)
+        ax_kde.fill_between(x, stats.norm.pdf(x, mu, sigma), alpha=0.12, color=col)
+        ax_kde.axvline(mu, color=col, linestyle=":", linewidth=1.4, alpha=0.7)
     ax_kde.set_xlabel("Duration (s)", fontsize=11)
     ax_kde.set_ylabel("Probability Density", fontsize=11)
-    ax_kde.set_title("Duration Distributions — Overlay", fontsize=12, fontweight="bold")
-    ax_kde.legend(fontsize=9)
+    ax_kde.set_title(
+        f"Duration Distributions — {ta} vs {tb} (pooled)",
+        fontsize=12,
+        fontweight="bold",
+    )
+    ax_kde.legend(fontsize=10)
     ax_kde.grid(axis="y", linestyle="--", alpha=0.4)
     ax_kde.spines[["top", "right"]].set_visible(False)
 
@@ -352,91 +500,122 @@ def plot_comparison(datasets: list):
     ax_db = fig.add_subplot(gs[1, 0])
     ax_db.set_facecolor(BG)
     bp1 = ax_db.boxplot(
-        dur_groups, patch_artist=True, medianprops=dict(color="black", linewidth=2)
+        [dur_a, dur_b], patch_artist=True, medianprops=dict(color="black", linewidth=2)
     )
-    for patch, col in zip(bp1["boxes"], colors):
+    for patch, col in zip(bp1["boxes"], [col_a, col_b]):
         patch.set_facecolor(col)
-        patch.set_alpha(0.6)
-    ax_db.set_xticklabels(names, rotation=15, ha="right", fontsize=9)
+        patch.set_alpha(0.65)
+    ax_db.set_xticks([1, 2])
+    ax_db.set_xticklabels([label_a, label_b], fontsize=9)
     ax_db.set_ylabel("Duration (s)", fontsize=11)
     ax_db.set_title("Duration Box-Plot", fontsize=12, fontweight="bold")
     ax_db.grid(axis="y", linestyle="--", alpha=0.4)
     ax_db.spines[["top", "right"]].set_visible(False)
-    anova_dur = anova_summary(dur_groups, "Duration")
-    ax_db.text(
-        0.5,
-        -0.32,
-        anova_dur,
-        transform=ax_db.transAxes,
-        ha="center",
-        fontsize=8.5,
-        bbox=dict(boxstyle="round,pad=0.4", fc="#EEF2FF", ec="#4C72B0", alpha=0.9),
-    )
+    if len(dur_a) > 0 and len(dur_b) > 0:
+        ax_db.text(
+            0.5,
+            -0.28,
+            anova_summary([dur_a, dur_b], "Duration"),
+            transform=ax_db.transAxes,
+            ha="center",
+            fontsize=9,
+            bbox=dict(boxstyle="round,pad=0.4", fc="#EEF2FF", ec=col_a, alpha=0.9),
+        )
 
     # ── Row 1b: Speed box-plot ──
     ax_sb = fig.add_subplot(gs[1, 1])
     ax_sb.set_facecolor(BG)
-    bp2 = ax_sb.boxplot(
-        speed_groups, patch_artist=True, medianprops=dict(color="black", linewidth=2)
-    )
-    for patch, col in zip(bp2["boxes"], colors):
-        patch.set_facecolor(col)
-        patch.set_alpha(0.6)
-    ax_sb.set_xticklabels(names, rotation=15, ha="right", fontsize=9)
+    if len(spd_a) > 0 and len(spd_b) > 0:
+        bp2 = ax_sb.boxplot(
+            [spd_a, spd_b],
+            patch_artist=True,
+            medianprops=dict(color="black", linewidth=2),
+        )
+        for patch, col in zip(bp2["boxes"], [col_a, col_b]):
+            patch.set_facecolor(col)
+            patch.set_alpha(0.65)
+        ax_sb.set_xticks([1, 2])
+        ax_sb.set_xticklabels([label_a, label_b], fontsize=9)
+        ax_sb.text(
+            0.5,
+            -0.28,
+            anova_summary([spd_a, spd_b], "Speed"),
+            transform=ax_sb.transAxes,
+            ha="center",
+            fontsize=9,
+            bbox=dict(boxstyle="round,pad=0.4", fc="#FFF5EE", ec=col_b, alpha=0.9),
+        )
     ax_sb.set_ylabel("Within-Run Speed (units / s)", fontsize=11)
-    ax_sb.set_title("Within-Run Speed Box-Plot", fontsize=12, fontweight="bold")
+    ax_sb.set_title("Speed Box-Plot", fontsize=12, fontweight="bold")
     ax_sb.grid(axis="y", linestyle="--", alpha=0.4)
     ax_sb.spines[["top", "right"]].set_visible(False)
-    anova_spd = anova_summary(speed_groups, "Speed")
-    ax_sb.text(
-        0.5,
-        -0.32,
-        anova_spd,
-        transform=ax_sb.transAxes,
-        ha="center",
-        fontsize=8.5,
-        bbox=dict(boxstyle="round,pad=0.4", fc="#FFF5EE", ec="#DD8452", alpha=0.9),
-    )
 
-    # ── Row 2: Overlaid speed-per-trial line chart ──
+    # ── Row 2: Group mean speed per move with ±1 SD band ──
     ax_sl = fig.add_subplot(gs[2, :])
     ax_sl.set_facecolor(BG)
-    for name, df, col in zip(names, dfs, colors):
-        speeds = compute_speeds(df)
-        trial_nums = df["trial"].values[1:]
+    for gk, col, lbl in [("A", col_a, ta), ("B", col_b, tb)]:
+        entries = [e for e in groups[gk] if len(e["speeds"]) > 0]
+        if not entries:
+            continue
+        max_len = max(len(e["speeds"]) for e in entries)
+        matrix = np.full((len(entries), max_len), np.nan)
+        for i, e in enumerate(entries):
+            matrix[i, : len(e["speeds"])] = e["speeds"]
+        mean_spd = np.nanmean(matrix, axis=0)
+        std_spd = np.nanstd(matrix, axis=0)
+        xs = np.arange(1, max_len + 1)
         ax_sl.plot(
-            trial_nums,
-            speeds,
+            xs,
+            mean_spd,
             color=col,
-            linewidth=2,
+            linewidth=2.5,
             marker="o",
             markersize=6,
             markerfacecolor="white",
             markeredgecolor=col,
-            markeredgewidth=1.8,
-            label=name,
+            markeredgewidth=2,
+            label=lbl,
             zorder=3,
         )
-    ax_sl.set_xlabel("Trial Number", fontsize=11)
-    ax_sl.set_ylabel("Average Speed (units / s)", fontsize=11)
-    ax_sl.set_title("Speed per Trial — All Experiments", fontsize=12, fontweight="bold")
+        ax_sl.fill_between(
+            xs,
+            mean_spd - std_spd,
+            mean_spd + std_spd,
+            color=col,
+            alpha=0.15,
+            label=f"{lbl} ±1 SD",
+        )
+    ax_sl.set_xlabel("Move Index (within run)", fontsize=11)
+    ax_sl.set_ylabel("Mean Speed (units / s)", fontsize=11)
+    ax_sl.set_title(
+        "Group Mean Speed per Move  (±1 SD band)", fontsize=12, fontweight="bold"
+    )
     ax_sl.legend(fontsize=9)
     ax_sl.grid(axis="y", linestyle="--", alpha=0.4)
     ax_sl.spines[["top", "right"]].set_visible(False)
 
     fig.tight_layout()
+    return fig
+
+
+def _print_anova():
+    dur_a, spd_a = _pool_group("A")
+    dur_b, spd_b = _pool_group("B")
+    ta, tb = group_titles["A"], group_titles["B"]
+    print("\n" + anova_summary([dur_a, dur_b], f"Duration ({ta} vs {tb})"))
+    if len(spd_a) and len(spd_b):
+        print(anova_summary([spd_a, spd_b], f"Speed ({ta} vs {tb})"))
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 
 def main():
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
+    root = _tk_root()
 
     paths = filedialog.askopenfilenames(
-        title="Select experiment CSV file(s)  [hold Ctrl/Cmd for multiple]",
+        parent=root,
+        title="Select Group A CSV file(s)  [hold Ctrl/Cmd for multiple]",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
     )
 
@@ -444,49 +623,16 @@ def main():
         messagebox.showinfo("No files selected", "No files were selected. Exiting.")
         sys.exit(0)
 
-    paths = [Path(p) for p in paths]
-    print(f"\nLoaded {len(paths)} file(s):")
-    for p in paths:
-        print(f"  • {p.name}")
+    # Ask for Group A's title before loading
+    group_titles["A"] = _ask_title("A", "Group A")
 
-    datasets = []
-    for i, path in enumerate(paths):
-        try:
-            df = load_csv(path)
-            color = PALETTE[i % len(PALETTE)]
-            datasets.append((path.stem, df, color))
-        except Exception as e:
-            messagebox.showerror("Load error", str(e))
+    print(f"\n{group_titles['A']} — loading {len(paths)} file(s):")
+    _ingest_paths([Path(p) for p in paths], "A")
 
-    if not datasets:
+    if not groups["A"]:
         sys.exit(1)
 
-    # Console summary per file
-    for name, df, color in datasets:
-        durs = df["duration_s"].values
-        speeds = compute_speeds(df)
-        print(f"\n── {name} ──")
-        print(
-            f"  Durations  n={len(durs)}  μ={durs.mean():.3f}s  "
-            f"σ={durs.std():.3f}s  "
-            f"min={durs.min():.3f}s  max={durs.max():.3f}s"
-        )
-        print(
-            f"  Speeds     n={len(speeds)}  μ={speeds.mean():.4f}  "
-            f"min={speeds.min():.4f}  max={speeds.max():.4f}  (units/s)"
-        )
-
-    # Single combined overview figure
-    plot_overview(datasets)
-
-    # Comparison + ANOVA (only when multiple files loaded)
-    if len(datasets) > 1:
-        plot_comparison(datasets)
-        dur_groups = [d[1]["duration_s"].values for d in datasets]
-        speed_groups = [compute_speeds(d[1]) for d in datasets]
-        print("\n" + anova_summary(dur_groups, "Duration"))
-        print(anova_summary(speed_groups, "Speed"))
-
+    build_overview_figure()
     plt.show()
 
 

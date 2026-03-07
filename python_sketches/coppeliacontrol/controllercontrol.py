@@ -48,7 +48,7 @@ BUTTON_LAYOUT = {
 # ── experiment type ───────────────────────────────────────────────────────────
 # Set to "reach" for the standard reach-to-target experiment, or
 # "transport" for the pick-and-place cube transport experiment.
-EXP_TYPE = "transport"  # "reach"  |  "transport"
+EXP_TYPE = "reach"  # "reach"  |  "transport"
 
 # ── reach experiment configuration ───────────────────────────────────────────
 EXP_N_TRIALS = 10
