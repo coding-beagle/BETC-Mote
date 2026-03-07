@@ -3,10 +3,9 @@ import pygame
 import numpy as np
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
-# ── NEW: import experiment module ─────────────────────────────────────────────
 import csv
 import datetime
-from reach_experiment import Experiment
+from reach_experiment import Experiment, TransportExperiment
 
 # ── constants ────────────────────────────────────────────────────────────────
 ROBOT_ARM_LENGTH = 0.21492 + 0.24129
@@ -46,20 +45,36 @@ BUTTON_LAYOUT = {
     5: (580, 110, "RB"),
 }
 
-# ── NEW: experiment configuration ────────────────────────────────────────────
-# Targets are placed randomly on a reachable hemisphere centred on the shoulder.
-# Tune these values to match your robot and desired difficulty.
-EXP_N_TRIALS = 10  # number of targets
-EXP_RADIUS = 0.05  # success zone radius in metres
+# ── experiment type ───────────────────────────────────────────────────────────
+# Set to "reach" for the standard reach-to-target experiment, or
+# "transport" for the pick-and-place cube transport experiment.
+EXP_TYPE = "transport"  # "reach"  |  "transport"
+
+# ── reach experiment configuration ───────────────────────────────────────────
+EXP_N_TRIALS = 10
+EXP_RADIUS = 0.05  # success zone radius (m)
 EXP_DWELL_TIME = 0.5  # seconds to hold inside zone
 EXP_TIMEOUT = 20.0  # seconds per trial before fail
 EXP_MIN_REACH = 0.7  # nearest target (fraction of arm length)
 EXP_MAX_REACH = 0.9  # furthest target (fraction of arm length)
 EXP_MIN_ELEVATION = -35.0  # degrees – allow slightly below horizontal
 EXP_MAX_ELEVATION = 50.0  # degrees – cap well before overhead singularity
-EXP_AZ_MIN = 20.0  # degrees – quarter-sphere spread around centre
-EXP_AZ_MAX = 110.0  # degrees
+EXP_AZ_MIN = 20.0  # degrees – quarter-sphere spread
+EXP_AZ_MAX = 110.0
 EXP_SEED = None  # set an int for reproducible target placement
+
+# ── transport experiment configuration ───────────────────────────────────────
+TRN_N_TRIALS = 10
+TRN_PICK_RADIUS = 0.06  # must approach within this distance to pick (m)
+TRN_DROP_RADIUS = 0.06  # must be within this distance to place (m)
+TRN_TIMEOUT = 100.0  # seconds per trial before fail
+TRN_MIN_REACH = 0.8
+TRN_MAX_REACH = 0.9
+TRN_MIN_ELEVATION = -35.0
+TRN_MAX_ELEVATION = 50.0
+TRN_AZ_MIN = 20.0
+TRN_AZ_MAX = 90.0
+TRN_SEED = None  # set an int for reproducible positions
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -159,6 +174,11 @@ rightWristLink = sim.getObject(
     "/rightJoint3/rightLink3/rightJoint4/rightLink4"
     "/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7/rightLink7"
 )
+rightGripperObject = sim.getObject(
+    "/rightJoint1/rightLink1/rightJoint2/rightLink2"
+    "/rightJoint3/rightLink3/rightJoint4/rightLink4"
+    "/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7/rightLink7/rightConnector/YuMiGripper/centerJoint/leftFinger"
+)
 simIndex = 0
 simObject = 0
 
@@ -229,7 +249,6 @@ font_md = pygame.font.SysFont("monospace", 15)
 font_lg = pygame.font.SysFont("monospace", 17, bold=True)
 clock = pygame.time.Clock()
 
-# fonts dict passed to experiment draw calls
 fonts = {"sm": font_sm, "md": font_md, "lg": font_lg}
 
 try:
@@ -238,37 +257,58 @@ try:
     sim.startSimulation()
     sim.setInt32Signal(GRIPPER_SIGNAL, 1)
     print("Simulation started OK")
+    print(f"Experiment type: {EXP_TYPE}")
 
-    # ── NEW: create experiment after sim starts ─────────────────────────────────
-    # Targets are sampled randomly on the reachable hemisphere around the shoulder.
-    experiment = Experiment.from_hemisphere(
-        sim,
-        shoulder_pos=robot_shoulder_world,
-        arm_length=ROBOT_ARM_LENGTH,
-        n_trials=EXP_N_TRIALS,
-        radius=EXP_RADIUS,
-        dwell_time=EXP_DWELL_TIME,
-        timeout=EXP_TIMEOUT,
-        min_reach=EXP_MIN_REACH,
-        max_reach=EXP_MAX_REACH,
-        min_elevation=EXP_MIN_ELEVATION,
-        max_elevation=EXP_MAX_ELEVATION,
-        az_min=EXP_AZ_MIN,
-        az_max=EXP_AZ_MAX,
-        seed=EXP_SEED,
-    )
-    print(
-        f"Experiment created — {EXP_N_TRIALS} targets placed on reachable hemisphere."
-    )
-    for i, t in enumerate(experiment._trial_defs):
-        print(f"  {i+1}. {t['pos']}")
+    # ── create experiment ─────────────────────────────────────────────────────
+    if EXP_TYPE == "transport":
+        experiment = TransportExperiment.from_random(
+            sim,
+            shoulder_pos=robot_shoulder_world,
+            arm_length=ROBOT_ARM_LENGTH,
+            n_trials=TRN_N_TRIALS,
+            pick_radius=TRN_PICK_RADIUS,
+            drop_radius=TRN_DROP_RADIUS,
+            timeout=TRN_TIMEOUT,
+            min_reach=TRN_MIN_REACH,
+            max_reach=TRN_MAX_REACH,
+            min_elevation=TRN_MIN_ELEVATION,
+            max_elevation=TRN_MAX_ELEVATION,
+            az_min=TRN_AZ_MIN,
+            az_max=TRN_AZ_MAX,
+            seed=TRN_SEED,
+        )
+        print(f"Transport experiment created — {TRN_N_TRIALS} pick-and-place trials.")
+        for i, t in enumerate(experiment._trial_defs):
+            print(f"  {i+1}. cube={t['cube_pos']}  drop={t['drop_pos']}")
+    else:
+        experiment = Experiment.from_hemisphere(
+            sim,
+            shoulder_pos=robot_shoulder_world,
+            arm_length=ROBOT_ARM_LENGTH,
+            n_trials=EXP_N_TRIALS,
+            radius=EXP_RADIUS,
+            dwell_time=EXP_DWELL_TIME,
+            timeout=EXP_TIMEOUT,
+            min_reach=EXP_MIN_REACH,
+            max_reach=EXP_MAX_REACH,
+            min_elevation=EXP_MIN_ELEVATION,
+            max_elevation=EXP_MAX_ELEVATION,
+            az_min=EXP_AZ_MIN,
+            az_max=EXP_AZ_MAX,
+            seed=EXP_SEED,
+        )
+        print(
+            f"Reach experiment created — {EXP_N_TRIALS} targets placed on reachable hemisphere."
+        )
+        for i, t in enumerate(experiment._trial_defs):
+            print(f"  {i+1}. {t['pos']}")
 
     running = True
-    gripper_open = False
-    wrist_pos = list(target_pos)  # initialise; updated each step
+    gripper_open = False  # signal=1 (close) is set at startup; open=False matches that
+    wrist_pos = list(target_pos)
 
     while running:
-        dt = clock.get_time() / 1000.0  # seconds since last frame
+        dt = clock.get_time() / 1000.0
 
         # ── events ────────────────────────────────────────────────────────────
         for event in pygame.event.get():
@@ -301,14 +341,21 @@ try:
         button_states = [joystick.get_button(i) for i in range(num_buttons)]
 
         # ── gripper ───────────────────────────────────────────────────────────
+        # LT (left trigger)  → close gripper  (gripper_open = False)
+        # RT (right trigger) → open gripper   (gripper_open = True)
+        # Neither held       → stay open by default
         if lt > TRIGGER_THRESHOLD:
-            sim.setInt32Signal(GRIPPER_SIGNAL, 1)
+            sim.setInt32Signal(GRIPPER_SIGNAL, 1)  # 1 = close
             gripper_open = False
         elif rt > TRIGGER_THRESHOLD:
-            sim.setInt32Signal(GRIPPER_SIGNAL, 0)
+            sim.setInt32Signal(GRIPPER_SIGNAL, 0)  # 0 = open
             gripper_open = True
+        else:
+            # Neither trigger held — gripper stays in last commanded state
+            # but we always reflect the hardware truth for the experiment logic
+            gripper_open = sim.getInt32Signal(GRIPPER_SIGNAL) == 0
 
-        # ── resync: snap target to actual wrist position ─────────────────────────
+        # ── resync ────────────────────────────────────────────────────────────
         if resync and not rotation_mode:
             target_pos = list(wrist_pos)
 
@@ -327,13 +374,11 @@ try:
             d_pitch = ls_y * ROT_SPEED
             d_yaw = ls_x * ROT_SPEED
             d_roll = rs_y * ROT_SPEED
-
             if d_pitch or d_yaw or d_roll:
                 delta = euler_to_quaternion(d_roll, d_pitch, d_yaw)
                 target_quat = normalise_quaternion(
                     quaternion_multiply(target_quat, delta)
                 )
-
             if reset_rot:
                 target_quat = [0.0, 0.0, 0.0, 1.0]
 
@@ -347,11 +392,16 @@ try:
 
         sim.step()
 
-        # ── NEW: read actual wrist position and update experiment ─────────────
-        wrist_pos = sim.getObjectPosition(rightWristLink, -1)
-        experiment.update(wrist_pos, dt)
+        # ── read actual wrist position ────────────────────────────────────────
+        wrist_pos = sim.getObjectPosition(rightGripperObject, -1)
 
-        # print summary to console once when experiment finishes
+        # ── update experiment ─────────────────────────────────────────────────
+        if EXP_TYPE == "transport":
+            experiment.update(wrist_pos, gripper_open, dt)
+        else:
+            experiment.update(wrist_pos, dt)
+
+        # print summary once when experiment finishes
         if experiment.finished and not getattr(experiment, "_summary_printed", False):
             print(experiment.summary())
             experiment._summary_printed = True
@@ -370,6 +420,11 @@ try:
         screen.blit(font_lg.render(mode_label, True, mode_col), (10, 8))
         screen.blit(font_sm.render(hint_label, True, (130, 130, 130)), (10, 32))
 
+        # Experiment type badge
+        badge_txt = "TRANSPORT" if EXP_TYPE == "transport" else "REACH"
+        badge_col = (230, 130, 40) if EXP_TYPE == "transport" else (100, 160, 220)
+        screen.blit(font_sm.render(f"[ {badge_txt} EXP ]", True, badge_col), (10, 52))
+
         ls_col = COL_ROTATION if rotation_mode else COL_POSITION
         rs_col = COL_ROTATION if rotation_mode else COL_POSITION
         ls_label = "pitch / yaw" if rotation_mode else "X / Y pos"
@@ -387,7 +442,6 @@ try:
             pressed = button_states[idx] if idx < num_buttons else False
             draw_button(screen, bx, by, blabel, pressed)
 
-        # ── NEW: draw experiment HUD ──────────────────────────────────────────
         experiment.draw(screen, wrist_pos, fonts, dt)
 
         pygame.display.flip()
@@ -406,34 +460,71 @@ finally:
     results = experiment.results if "experiment" in dir() else []
     if results:
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"controllerReachResults/reach_results_{ts}.csv"
-        fieldnames = [
-            "trial",
-            "label",
-            "result",
-            "duration_s",
-            "target_x",
-            "target_y",
-            "target_z",
-        ]
-        # pull target positions from trial defs for full context
-        trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
-        with open(filename, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for r in results:
-                pos = trial_defs.get(r["trial"], {}).get("pos", [None, None, None])
-                writer.writerow(
-                    {
-                        "trial": r["trial"],
-                        "label": r["label"],
-                        "result": r["result"],
-                        "duration_s": round(r["duration"], 3),
-                        "target_x": round(pos[0], 4) if pos[0] is not None else "",
-                        "target_y": round(pos[1], 4) if pos[1] is not None else "",
-                        "target_z": round(pos[2], 4) if pos[2] is not None else "",
-                    }
-                )
+        exp_tag = "transport" if EXP_TYPE == "transport" else "reach"
+        filename = f"controllerReachResults/{exp_tag}_results_{ts}.csv"
+
+        if EXP_TYPE == "transport":
+            fieldnames = [
+                "trial",
+                "label",
+                "result",
+                "duration_s",
+                "cube_x",
+                "cube_y",
+                "cube_z",
+                "drop_x",
+                "drop_y",
+                "drop_z",
+            ]
+            trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
+            with open(filename, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for r in results:
+                    cp = trial_defs.get(r["trial"], {}).get("cube_pos", [None] * 3)
+                    dp = trial_defs.get(r["trial"], {}).get("drop_pos", [None] * 3)
+                    writer.writerow(
+                        {
+                            "trial": r["trial"],
+                            "label": r["label"],
+                            "result": r["result"],
+                            "duration_s": round(r["duration"], 3),
+                            "cube_x": round(cp[0], 4) if cp[0] is not None else "",
+                            "cube_y": round(cp[1], 4) if cp[1] is not None else "",
+                            "cube_z": round(cp[2], 4) if cp[2] is not None else "",
+                            "drop_x": round(dp[0], 4) if dp[0] is not None else "",
+                            "drop_y": round(dp[1], 4) if dp[1] is not None else "",
+                            "drop_z": round(dp[2], 4) if dp[2] is not None else "",
+                        }
+                    )
+        else:
+            fieldnames = [
+                "trial",
+                "label",
+                "result",
+                "duration_s",
+                "target_x",
+                "target_y",
+                "target_z",
+            ]
+            trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
+            with open(filename, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for r in results:
+                    pos = trial_defs.get(r["trial"], {}).get("pos", [None] * 3)
+                    writer.writerow(
+                        {
+                            "trial": r["trial"],
+                            "label": r["label"],
+                            "result": r["result"],
+                            "duration_s": round(r["duration"], 3),
+                            "target_x": round(pos[0], 4) if pos[0] is not None else "",
+                            "target_y": round(pos[1], 4) if pos[1] is not None else "",
+                            "target_z": round(pos[2], 4) if pos[2] is not None else "",
+                        }
+                    )
+
         print(f"Results saved to {filename}")
         print(experiment.summary())
     else:

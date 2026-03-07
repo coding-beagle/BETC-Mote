@@ -25,10 +25,10 @@ gantt
       Final submission: milestone, 2026-05-01, 
     section Report Writing
       title Project Plan Semester 2
-      Report results  :crit, 2026-02-02, 21d
-      Review :crit, 2026-02-23, 14d
-      Final presentation: crit, 2026-03-09, 14d
+      Report results  :crit, 2026-02-02, 35d
+      Review :crit, 2026-03-09, 21d
+      Final presentation: crit, 2026-03-30, 14d
     section Development
-      Experimentation: 2026-02-02, 21d
+      Experimentation: 2026-02-02, 35d
 
 ```
