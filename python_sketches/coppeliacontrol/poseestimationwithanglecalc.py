@@ -344,29 +344,88 @@ def draw_experiment_hud(frame, experiment, wrist_pos, dt):
 # ── CoppeliaSim setup ─────────────────────────────────────────────────────────
 print("Connecting to CoppeliaSim...")
 client = RemoteAPIClient()
-print("Successfully connected")
 sim = client.require("sim")
 simIK = client.require("simIK")
 
 rightShoulderAbduct = sim.getObject("/rightJoint1")
-rightShoulderFlex = sim.getObject("/rightJoint1/rightLink1/rightJoint2")
-rightForearmRoll = sim.getObject(
-    "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3"
+
+# Elbow tip link — the last link before the wrist joints begin
+rightElbowLink = sim.getObject(
+    "/rightJoint1/rightLink1/rightJoint2/rightLink2"
+    "/rightJoint3/rightLink3/rightJoint4/rightLink4"
 )
-rightElbowFlex = sim.getObject(
-    "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/"
-)
-rightWristDeviation = sim.getObject(
-    "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5"
-)
-rightWristFlex = sim.getObject(
-    "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5/rightLink5/rightJoint6"
-)
+
+# Wrist tip link — unchanged
 rightWristLink = sim.getObject(
     "/rightJoint1/rightLink1/rightJoint2/rightLink2"
     "/rightJoint3/rightLink3/rightJoint4/rightLink4"
     "/rightJoint5/rightLink5/rightJoint6/rightLink6"
-    "/rightJoint7/rightLink7"
+)
+
+# Two dummy targets
+elbowTarget = sim.createDummy(0.02)
+sim.setObjectAlias(elbowTarget, "ElbowTarget")
+
+wristTarget = sim.createDummy(0.02)
+sim.setObjectAlias(wristTarget, "WristTarget")
+
+robot_shoulder_world = sim.getObjectPosition(rightShoulderAbduct, -1)
+print(f"Robot shoulder origin: {robot_shoulder_world}")
+
+ikEnv = simIK.createEnvironment()
+
+# ── Elbow IK groups ────────────────────────────────────────────────────────────
+ikGroupElbowUndamped = simIK.createGroup(ikEnv)
+simIK.setGroupCalculation(
+    ikEnv, ikGroupElbowUndamped, simIK.method_pseudo_inverse, 0, 6
+)
+simIK.addElementFromScene(
+    ikEnv,
+    ikGroupElbowUndamped,
+    rightShoulderAbduct,
+    rightElbowLink,
+    elbowTarget,
+    simIK.constraint_position,
+)
+
+ikGroupElbowDamped = simIK.createGroup(ikEnv)
+simIK.setGroupCalculation(
+    ikEnv, ikGroupElbowDamped, simIK.method_damped_least_squares, 1, 99
+)
+simIK.addElementFromScene(
+    ikEnv,
+    ikGroupElbowDamped,
+    rightShoulderAbduct,
+    rightElbowLink,
+    elbowTarget,
+    simIK.constraint_position,
+)
+
+# ── Wrist IK groups ────────────────────────────────────────────────────────────
+ikGroupWristUndamped = simIK.createGroup(ikEnv)
+simIK.setGroupCalculation(
+    ikEnv, ikGroupWristUndamped, simIK.method_pseudo_inverse, 0, 6
+)
+simIK.addElementFromScene(
+    ikEnv,
+    ikGroupWristUndamped,
+    rightShoulderAbduct,
+    rightWristLink,
+    wristTarget,
+    simIK.constraint_position,
+)
+
+ikGroupWristDamped = simIK.createGroup(ikEnv)
+simIK.setGroupCalculation(
+    ikEnv, ikGroupWristDamped, simIK.method_damped_least_squares, 1, 99
+)
+simIK.addElementFromScene(
+    ikEnv,
+    ikGroupWristDamped,
+    rightShoulderAbduct,
+    rightWristLink,
+    wristTarget,
+    simIK.constraint_position,
 )
 
 print("Entering Try Block")

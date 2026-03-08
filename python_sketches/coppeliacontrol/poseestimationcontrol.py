@@ -6,6 +6,12 @@ The main loop picks the best available pose (primary camera first,
 falling back to secondary cameras if tracking is lost) and feeds it
 to CoppeliaSim IK.
 
+Experiment Modes
+----------------
+Press  R  to start / restart the Reach experiment
+Press  T  to start / restart the Transport experiment
+Press  Q  to quit
+
 Configuration
 -------------
 CAMERA_INDICES  : list of OpenCV camera indices to open
@@ -23,13 +29,13 @@ import mediapipe as mp
 import numpy as np
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
-from reach_experiment import Experiment
+from reach_experiment import Experiment, TransportExperiment
 
 # ── camera configuration ──────────────────────────────────────────────────────
 CAMERA_INDICES = [0, 1]  # OpenCV device indices; edit to match your setup
 PRIMARY_CAMERA = 0  # which index in CAMERA_INDICES is the preferred source
 TILE_WIDTH = 640  # display width of the primary (HUD) camera tile
-SECONDARY_TILE_WIDTH = 240  # display width of all other camera tiles
+SECONDARY_TILE_WIDTH = 240
 HUD_CAMERA = 0  # index within CAMERA_INDICES that gets the experiment HUD
 
 # ── constants ─────────────────────────────────────────────────────────────────
@@ -41,7 +47,20 @@ RIGHT_WRIST = 16
 
 ROBOT_ARM_LENGTH = 0.21492 + 0.24129
 
-# ── experiment configuration ───────────────────────────────────────────────────
+# ── gripper signal ────────────────────────────────────────────────────────────
+GRIPPER_SIGNAL = "gripper_close"  # matches joystick controller: 1=close, 0=open
+
+# ── hand gesture configuration ────────────────────────────────────────────────
+# Finger curl threshold: fraction of max curl distance at which a finger counts
+# as "closed".  Lower = more sensitive (easier to trigger closed).
+FINGER_CURL_THRESHOLD = 1.1
+# How many of the 4 non-thumb fingers must be curled to call the hand "closed"
+FINGER_CLOSED_COUNT = 3
+# Hysteresis: once open/closed, require this many consecutive frames of the
+# opposite state before flipping (prevents jitter).
+GRIPPER_DEBOUNCE_FRAMES = 4
+
+# ── reach experiment configuration ────────────────────────────────────────────
 EXP_N_TRIALS = 10
 EXP_RADIUS = 0.05
 EXP_DWELL_TIME = 0.5
@@ -53,6 +72,24 @@ EXP_MAX_ELEVATION = 50.0
 EXP_AZ_MIN = 20.0
 EXP_AZ_MAX = 110.0
 EXP_SEED = None
+
+# ── transport experiment configuration ────────────────────────────────────────
+TRANSPORT_N_TRIALS = 5
+TRANSPORT_PICK_RADIUS = 0.06
+TRANSPORT_DROP_RADIUS = 0.06
+TRANSPORT_TIMEOUT = 30.0
+TRANSPORT_MIN_REACH = 0.5
+TRANSPORT_MAX_REACH = 0.80
+TRANSPORT_MIN_ELEV = -15.0
+TRANSPORT_MAX_ELEV = 45.0
+TRANSPORT_AZ_MIN = 20.0
+TRANSPORT_AZ_MAX = 110.0
+TRANSPORT_SEED = None
+
+# ── experiment mode ────────────────────────────────────────────────────────────
+MODE_REACH = "reach"
+MODE_TRANSPORT = "transport"
+MODE_SELECT = "select"  # lobby / menu screen
 
 
 # ── vector helpers ────────────────────────────────────────────────────────────
@@ -87,27 +124,8 @@ def remap_axes(v):
 
 # ── arm-length calibration ────────────────────────────────────────────────────
 class ArmCalibrator:
-    """
-    Estimates the human's max arm reach from live pose data and exposes a scale
-    factor so that human_max_reach maps to robot_arm_length.
-
-    Strategy
-    --------
-    - Each frame we measure shoulder→elbow + elbow→wrist (matching the two robot
-      segments) as the *anatomical* arm length, and shoulder→wrist as the
-      *reach* length (straight-line extension).
-    - We keep a rolling maximum of the reach length over a decay window so the
-      calibration updates when the user stretches further, and slowly decays
-      back down if they consistently reach less (e.g. after a break).
-    - Until enough samples are collected the scale defaults to 1.0 (old
-      normalised behaviour) so motion is never blocked at startup.
-    """
-
-    # How quickly the max decays toward the observed mean (fraction per second)
     DECAY_RATE = 0.002
-    # Minimum samples before we trust the calibration
     MIN_SAMPLES = 30
-    # Hard floor: human reach must be at least this many metres to count
     MIN_REACH_M = 0.15
 
     def __init__(self, robot_arm_length: float):
@@ -116,7 +134,6 @@ class ArmCalibrator:
         self._samples = 0
 
     def update(self, human_shoulder, human_elbow, human_wrist, dt: float):
-        """Call once per frame with raw MediaPipe world landmarks."""
         reach = vec_length(vec_sub(human_wrist, human_shoulder))
         if reach < self.MIN_REACH_M:
             return
@@ -124,7 +141,6 @@ class ArmCalibrator:
         if reach > self._max_reach:
             self._max_reach = reach
         else:
-            # Gentle decay so calibration adapts downward over time
             self._max_reach -= self._max_reach * self.DECAY_RATE * dt
 
     @property
@@ -133,7 +149,6 @@ class ArmCalibrator:
 
     @property
     def scale(self) -> float:
-        """robot_arm_length / human_max_reach  (or 1.0 before calibration)."""
         if not self.calibrated:
             return 1.0
         return self.robot_arm_length / self._max_reach
@@ -151,21 +166,10 @@ def retarget(
     robot_arm_length,
     human_scale: float = 1.0,
 ):
-    """
-    Map human wrist to robot world space.
-
-    With human_scale == 1.0 (default / uncalibrated) this normalises to the
-    full robot arm length — identical to the old behaviour.
-
-    With a calibrated human_scale (= robot_arm_length / human_max_reach) the
-    reach is preserved proportionally: a half-extended human arm moves the
-    robot to half its reach, a fully extended arm reaches the robot's maximum.
-    """
     human_vec = vec_sub(human_wrist, human_shoulder)
     human_length = vec_length(human_vec)
     if human_length < 1e-6:
         return None
-    # Scale the raw human reach into robot space, clamped to robot arm length
     scaled_length = min(human_length * human_scale, robot_arm_length)
     direction = vec_scale(human_vec, 1.0 / human_length)
     remapped = remap_axes(direction)
@@ -228,10 +232,67 @@ def _cv_col(r, g, b):
     return (b, g, r)
 
 
-def draw_experiment_hud(frame, experiment, wrist_pos, dt):
+def draw_mode_select_hud(frame):
+    """Overlay a mode-selection menu on the HUD camera frame."""
     H, W = frame.shape[:2]
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (W, H), (10, 10, 18), -1)
+    cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
+
+    lines = [
+        ("YuMi Pose Control", 0.9, (210, 210, 210), 2),
+        ("Select experiment mode:", 0.65, (160, 160, 160), 1),
+        ("", 0.0, (0, 0, 0), 0),
+        ("[R]  Reach Experiment", 0.7, _cv_col(100, 220, 130), 2),
+        ("[T]  Transport Experiment", 0.7, _cv_col(100, 180, 255), 2),
+        ("", 0.0, (0, 0, 0), 0),
+        ("Transport: open hand = gripper open", 0.45, (140, 140, 140), 1),
+        ("          closed fist = gripper closed", 0.45, (140, 140, 140), 1),
+        ("", 0.0, (0, 0, 0), 0),
+        ("[Q]  Quit", 0.5, (130, 130, 130), 1),
+    ]
+    y = H // 2 - 120
+    for text, scale, col, thick in lines:
+        if not text:
+            y += 14
+            continue
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+        cv2.putText(
+            frame,
+            text,
+            (W // 2 - tw // 2, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            scale,
+            col,
+            thick,
+        )
+        y += th + 16
+
+
+def draw_experiment_hud(frame, experiment, wrist_pos, dt, mode):
+    """Unified HUD for both Reach and Transport experiments."""
+    H, W = frame.shape[:2]
+
+    # ── mode badge (top-left corner) ──────────────────────────────────────────
+    if mode == MODE_REACH:
+        badge_txt = "REACH"
+        badge_col = _cv_col(100, 220, 130)
+    else:
+        badge_txt = "TRANSPORT"
+        badge_col = _cv_col(100, 180, 255)
+
+    cv2.rectangle(frame, (0, 0), (130, 28), (22, 22, 28), -1)
+    cv2.putText(frame, badge_txt, (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, badge_col, 1)
+
+    # ── switch hint ───────────────────────────────────────────────────────────
+    hint = "[R] Reach  [T] Transport  [Q] Quit"
+    cv2.putText(
+        frame, hint, (W - 330, H - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (80, 80, 80), 1
+    )
+
     active = experiment._active
 
+    # ── progress bar (bottom) ─────────────────────────────────────────────────
     total = len(experiment._trial_defs)
     done = len(experiment.results)
     bar_y = H - 12
@@ -246,6 +307,7 @@ def draw_experiment_hud(frame, experiment, wrist_pos, dt):
         frame, prog, (10, bar_y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (130, 130, 130), 1
     )
 
+    # ── finished overlay ──────────────────────────────────────────────────────
     if experiment.finished:
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (W, H), (18, 10, 10), -1)
@@ -269,146 +331,431 @@ def draw_experiment_hud(frame, experiment, wrist_pos, dt):
             (210, 210, 210),
             1,
         )
+        cv2.putText(
+            frame,
+            "Press [R] or [T] to restart",
+            (W // 2 - 140, H // 2 + 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (130, 130, 130),
+            1,
+        )
         return
 
     if active is None:
         return
 
-    dist = active.distance_to(wrist_pos)
-    ratio = min(1.0, dist / (active.radius * 6))
+    # ── REACH-specific HUD ───────────────────────────────────────────────────
+    if mode == MODE_REACH:
+        dist = active.distance_to(wrist_pos)
+        ratio = min(1.0, dist / (active.radius * 6))
 
-    def lerp(a, b, t):
-        t = max(0.0, min(1.0, t))
-        return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+        def lerp(a, b, t):
+            t = max(0.0, min(1.0, t))
+            return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
-    C_HOT = (100, 220, 130)
-    C_WARM = (220, 190, 60)
-    C_IDLE = (100, 160, 220)
-    hud_rgb = (
-        lerp(C_HOT, C_WARM, ratio / 0.4)
-        if ratio < 0.4
-        else lerp(C_WARM, C_IDLE, (ratio - 0.4) / 0.6)
-    )
-    hud_col = _cv_col(*hud_rgb)
+        C_HOT = (100, 220, 130)
+        C_WARM = (220, 190, 60)
+        C_IDLE = (100, 160, 220)
+        hud_rgb = (
+            lerp(C_HOT, C_WARM, ratio / 0.4)
+            if ratio < 0.4
+            else lerp(C_WARM, C_IDLE, (ratio - 0.4) / 0.6)
+        )
+        hud_col = _cv_col(*hud_rgb)
 
-    if active._flash_t > 0:
-        flash_rgb = (100, 220, 130) if active._result == "success" else (220, 80, 80)
-        alpha = active._flash_t / 0.6
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (W, H), _cv_col(*flash_rgb), -1)
-        cv2.addWeighted(overlay, alpha * 0.45, frame, 1 - alpha * 0.45, 0, frame)
-        msg = "TARGET REACHED" if active._result == "success" else "TIMED OUT"
+        if active._flash_t > 0:
+            flash_rgb = (
+                (100, 220, 130) if active._result == "success" else (220, 80, 80)
+            )
+            alpha = active._flash_t / 0.6
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (W, H), _cv_col(*flash_rgb), -1)
+            cv2.addWeighted(overlay, alpha * 0.45, frame, 1 - alpha * 0.45, 0, frame)
+            msg = "TARGET REACHED" if active._result == "success" else "TIMED OUT"
+            cv2.putText(
+                frame,
+                msg,
+                (W // 2 - 110, H // 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.1,
+                (255, 255, 255),
+                2,
+            )
+            return
+
+        px, py = W - 270, 30
+        cv2.rectangle(frame, (px - 8, py - 4), (W - 8, py + 115), (22, 22, 28), -1)
+        cv2.rectangle(frame, (px - 8, py - 4), (W - 8, py + 115), hud_col, 1)
         cv2.putText(
             frame,
-            msg,
-            (W // 2 - 110, H // 2),
+            active.label,
+            (px, py + 18),
             cv2.FONT_HERSHEY_SIMPLEX,
-            1.1,
-            (255, 255, 255),
-            2,
-        )
-        return
-
-    px, py = W - 270, 10
-    cv2.rectangle(frame, (px - 8, py - 4), (W - 8, py + 115), (22, 22, 28), -1)
-    cv2.rectangle(frame, (px - 8, py - 4), (W - 8, py + 115), hud_col, 1)
-    cv2.putText(
-        frame,
-        active.label,
-        (px, py + 18),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
-        (210, 210, 210),
-        1,
-    )
-    cv2.putText(
-        frame,
-        f"dist  {dist*100:.1f} cm",
-        (px, py + 38),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        hud_col,
-        1,
-    )
-
-    bar_x, bar_y2 = px, py + 52
-    bar_w = 250
-    fill = int(bar_w * (1.0 - ratio))
-    cv2.rectangle(frame, (bar_x, bar_y2), (bar_x + bar_w, bar_y2 + 8), (55, 55, 55), -1)
-    if fill > 0:
-        cv2.rectangle(frame, (bar_x, bar_y2), (bar_x + fill, bar_y2 + 8), hud_col, -1)
-
-    if active._inside and active.dwell_fraction > 0:
-        cx, cy = W - 35, py + 88
-        r = 18
-        cv2.circle(frame, (cx, cy), r, (55, 55, 55), 2)
-        cv2.ellipse(
-            frame,
-            (cx, cy),
-            (r, r),
-            -90,
-            0,
-            int(360 * active.dwell_fraction),
-            _cv_col(100, 220, 130),
-            2,
+            0.55,
+            (210, 210, 210),
+            1,
         )
         cv2.putText(
             frame,
-            f"{int(active.dwell_fraction*100)}%",
-            (cx - 14, cy + 5),
+            f"dist  {dist*100:.1f} cm",
+            (px, py + 38),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.35,
-            _cv_col(100, 220, 130),
+            0.5,
+            hud_col,
             1,
         )
 
-    if active.timeout > 0:
-        if not active._started:
+        bar_x, bar_y2 = px, py + 52
+        bar_w = 250
+        fill = int(bar_w * (1.0 - ratio))
+        cv2.rectangle(
+            frame, (bar_x, bar_y2), (bar_x + bar_w, bar_y2 + 8), (55, 55, 55), -1
+        )
+        if fill > 0:
+            cv2.rectangle(
+                frame, (bar_x, bar_y2), (bar_x + fill, bar_y2 + 8), hud_col, -1
+            )
+
+        if active._inside and active.dwell_fraction > 0:
+            cx, cy = W - 35, py + 88
+            r = 18
+            cv2.circle(frame, (cx, cy), r, (55, 55, 55), 2)
+            cv2.ellipse(
+                frame,
+                (cx, cy),
+                (r, r),
+                -90,
+                0,
+                int(360 * active.dwell_fraction),
+                _cv_col(100, 220, 130),
+                2,
+            )
             cv2.putText(
                 frame,
-                "move to start timer",
-                (px, py + 108),
+                f"{int(active.dwell_fraction*100)}%",
+                (cx - 14, cy + 5),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.4,
-                _cv_col(160, 140, 60),
+                0.35,
+                _cv_col(100, 220, 130),
                 1,
             )
+
+        if active.timeout > 0:
+            if not active._started:
+                cv2.putText(
+                    frame,
+                    "move to start timer",
+                    (px, py + 108),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    _cv_col(160, 140, 60),
+                    1,
+                )
+            else:
+                tr = active.time_remaining
+                t_col = _cv_col(220, 80, 80) if tr < 3.0 else (130, 130, 130)
+                cv2.putText(
+                    frame,
+                    f"time  {tr:.1f}s",
+                    (px, py + 108),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    t_col,
+                    1,
+                )
+
+    # ── TRANSPORT-specific HUD ───────────────────────────────────────────────
+    else:
+        _PHASE_APPROACH = "approach"
+        _PHASE_GRIP = "carry"  # matches internal phase strings from reach_experiment
+        _PHASE_CARRY = "carry"
+        _PHASE_PLACE = "place"
+
+        # Phase label map (mirrors reach_experiment._PHASE_LABELS)
+        PHASE_LABELS = {
+            "approach": "1. Move wrist to cube  (open hand)",
+            "grip": "2. Close fist to grip",
+            "carry": "3. Carry cube to drop zone",
+            "place": "4. Open hand to release",
+            "done": "Done!",
+        }
+        phase = getattr(active, "_phase", "approach")
+        phase_text = PHASE_LABELS.get(phase, phase)
+
+        C_ORANGE = _cv_col(230, 130, 40)
+        C_HOT = _cv_col(100, 220, 130)
+        phase_col = C_ORANGE if phase in ("approach", "grip") else C_HOT
+
+        if active._flash_t > 0 and active._result:
+            flash_rgb = (
+                (100, 220, 130) if active._result == "success" else (220, 80, 80)
+            )
+            alpha = active._flash_t / 0.8
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (W, H), _cv_col(*flash_rgb), -1)
+            cv2.addWeighted(overlay, alpha * 0.45, frame, 1 - alpha * 0.45, 0, frame)
+            msg = "DELIVERED!" if active._result == "success" else "TIMED OUT"
+            cv2.putText(
+                frame,
+                msg,
+                (W // 2 - 100, H // 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.1,
+                (255, 255, 255),
+                2,
+            )
+            return
+
+        px, py = W - 290, 30
+        panel_h = 140
+        cv2.rectangle(frame, (px - 8, py - 4), (W - 8, py + panel_h), (22, 22, 28), -1)
+        cv2.rectangle(frame, (px - 8, py - 4), (W - 8, py + panel_h), phase_col, 1)
+
+        cv2.putText(
+            frame,
+            active.label,
+            (px, py + 18),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (210, 210, 210),
+            1,
+        )
+        cv2.putText(
+            frame,
+            phase_text,
+            (px, py + 38),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.46,
+            phase_col,
+            1,
+        )
+
+        # Distances
+        import math
+
+        cur_cube = getattr(active, "_current_cube_pos", active.cube_pos)
+        d_cube = math.sqrt(sum((wrist_pos[i] - cur_cube[i]) ** 2 for i in range(3)))
+        d_drop = math.sqrt(
+            sum((wrist_pos[i] - active.drop_pos[i]) ** 2 for i in range(3))
+        )
+
+        if phase in ("approach", "grip"):
+            d_txt = f"cube  {d_cube*100:.1f} cm"
+            d_col = C_HOT if d_cube <= active.pick_radius else C_ORANGE
         else:
-            tr = active.time_remaining
-            t_col = _cv_col(220, 80, 80) if tr < 3.0 else (130, 130, 130)
+            d_txt = f"drop  {d_drop*100:.1f} cm"
+            d_col = C_HOT if d_drop <= active.drop_radius else _cv_col(220, 190, 60)
+        cv2.putText(
+            frame, d_txt, (px, py + 58), cv2.FONT_HERSHEY_SIMPLEX, 0.5, d_col, 1
+        )
+
+        gripped = getattr(active, "_gripped", False)
+        g_txt = (
+            "hand: CLOSED  (open to release)"
+            if gripped
+            else "hand: OPEN  (close fist to grip)"
+        )
+        g_col = C_HOT if gripped else _cv_col(100, 160, 220)
+        cv2.putText(
+            frame, g_txt, (px, py + 78), cv2.FONT_HERSHEY_SIMPLEX, 0.45, g_col, 1
+        )
+
+        # Phase dots
+        phases = ["approach", "grip", "carry", "place"]
+        phase_idx = phases.index(phase) if phase in phases else 0
+        dot_y = py + 108
+        for i, ph in enumerate(phases):
+            dot_x = px + i * 62 + 15
+            done_ph = phase_idx > i
+            active_ph = phase_idx == i
+            col = (
+                _cv_col(100, 220, 130)
+                if done_ph
+                else (phase_col if active_ph else (55, 55, 55))
+            )
+            cv2.circle(frame, (dot_x, dot_y), 7, col, -1)
             cv2.putText(
                 frame,
-                f"time  {tr:.1f}s",
-                (px, py + 108),
+                str(i + 1),
+                (dot_x - 4, dot_y + 4),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                t_col,
+                0.35,
+                (20, 20, 20) if (done_ph or active_ph) else (100, 100, 100),
                 1,
             )
+            if i < len(phases) - 1:
+                line_col = _cv_col(100, 220, 130) if done_ph else (55, 55, 55)
+                cv2.line(frame, (dot_x + 7, dot_y), (dot_x + 55, dot_y), line_col, 2)
+
+        tr = active.time_remaining
+        t_col = _cv_col(220, 80, 80) if tr < 5.0 else (130, 130, 130)
+        cv2.putText(
+            frame,
+            f"time  {tr:.1f}s",
+            (px, py + 128),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            t_col,
+            1,
+        )
+
+
+# ── Hand gesture classifier ───────────────────────────────────────────────────
+_FINGER_NAMES = ["Index", "Middle", "Ring", "Pinky"]
+_MCP_IDS = [5, 9, 13, 17]
+_TIP_IDS = [8, 12, 16, 20]
+_WRIST_ID = 0
+
+
+def compute_finger_curls(hand_landmarks):
+    """
+    Return a list of 4 curl ratios (tip_dist / mcp_dist) for Index→Pinky.
+
+    ratio < FINGER_CURL_THRESHOLD  →  finger is curled / closed
+    ratio >= FINGER_CURL_THRESHOLD →  finger is extended / open
+
+    Values are clamped to [0, 2] for display purposes.
+    Returns None if landmarks are invalid.
+    """
+    lm = hand_landmarks.landmark
+
+    def dist3(a, b):
+        return (
+            (lm[a].x - lm[b].x) ** 2
+            + (lm[a].y - lm[b].y) ** 2
+            + (lm[a].z - lm[b].z) ** 2
+        ) ** 0.5
+
+    ratios = []
+    for mcp, tip in zip(_MCP_IDS, _TIP_IDS):
+        d_mcp = dist3(_WRIST_ID, mcp)
+        if d_mcp < 1e-6:
+            ratios.append(1.0)  # neutral if degenerate
+        else:
+            ratios.append(min(2.0, dist3(_WRIST_ID, tip) / d_mcp))
+    return ratios
+
+
+def classify_hand_open(hand_landmarks) -> bool:
+    """True = open hand, False = closed fist."""
+    ratios = compute_finger_curls(hand_landmarks)
+    curled = sum(1 for r in ratios if r < FINGER_CURL_THRESHOLD)
+    return curled < FINGER_CLOSED_COUNT
+
+
+def draw_curl_meter(frame, curl_ratios, origin_xy, label_prefix=""):
+    """
+    Draw a compact per-finger curl meter at origin_xy (top-left of panel).
+
+    Each finger gets a horizontal bar:
+      - Full bar width = ratio of 2.0 (fully extended beyond MCP)
+      - Threshold line marks FINGER_CURL_THRESHOLD
+      - Bar colour: green (extended/open) → red (curled/closed)
+      - A small label shows the finger name and raw ratio
+
+    origin_xy : (x, y) top-left corner of the panel
+    """
+    if curl_ratios is None:
+        return
+
+    ox, oy = origin_xy
+    BAR_W = 110  # max bar width in pixels
+    BAR_H = 9
+    ROW_STEP = 17
+    MAX_RATIO = 2.0  # ratio that fills the full bar
+
+    # Panel background
+    panel_h = ROW_STEP * 4 + 10
+    cv2.rectangle(
+        frame, (ox - 4, oy - 4), (ox + BAR_W + 74, oy + panel_h), (22, 22, 28), -1
+    )
+    cv2.rectangle(
+        frame, (ox - 4, oy - 4), (ox + BAR_W + 74, oy + panel_h), (55, 55, 65), 1
+    )
+
+    if label_prefix:
+        cv2.putText(
+            frame,
+            label_prefix,
+            (ox, oy - 8),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (110, 110, 110),
+            1,
+        )
+
+    thresh_x = ox + int(BAR_W * FINGER_CURL_THRESHOLD / MAX_RATIO)
+
+    for i, (name, ratio) in enumerate(zip(_FINGER_NAMES, curl_ratios)):
+        by = oy + i * ROW_STEP
+
+        # Background track
+        cv2.rectangle(frame, (ox, by), (ox + BAR_W, by + BAR_H), (45, 45, 45), -1)
+
+        # Filled portion — colour shifts green→red as ratio drops below threshold
+        fill_w = max(1, int(BAR_W * min(ratio, MAX_RATIO) / MAX_RATIO))
+        t = max(
+            0.0,
+            min(
+                1.0,
+                1.0
+                - (ratio - FINGER_CURL_THRESHOLD)
+                / max(1e-6, 1.0 - FINGER_CURL_THRESHOLD),
+            ),
+        )
+        r_ch = int(40 + t * (220 - 40))
+        g_ch = int(200 - t * (200 - 60))
+        bar_col = (40, g_ch, r_ch)  # BGR
+        cv2.rectangle(frame, (ox, by), (ox + fill_w, by + BAR_H), bar_col, -1)
+
+        # Threshold line
+        cv2.line(
+            frame, (thresh_x, by - 1), (thresh_x, by + BAR_H + 1), (200, 200, 200), 1
+        )
+
+        # Label + value
+        is_curled = ratio < FINGER_CURL_THRESHOLD
+        lbl_col = (60, 60, 220) if is_curled else (60, 200, 100)  # BGR
+        cv2.putText(
+            frame,
+            f"{name[0]}  {ratio:.2f}{'  curl' if is_curled else ''}",
+            (ox + BAR_W + 4, by + BAR_H - 1),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.32,
+            lbl_col,
+            1,
+        )
 
 
 # ── Camera thread ─────────────────────────────────────────────────────────────
 class CameraThread(threading.Thread):
     """
-    Captures frames and runs MediaPipe pose estimation in a background thread.
+    Captures frames and runs both MediaPipe Pose and MediaPipe Hands in a
+    background thread.
 
     Public attributes (protected by self.lock):
-        frame          : latest BGR frame (or None)
-        world_landmarks: latest pose_world_landmarks (or None)
-        pose_landmarks : latest pose_landmarks for drawing (or None)
-        tracking       : True when a pose is detected
+        frame           : latest BGR frame (or None)
+        world_landmarks : latest pose_world_landmarks (or None)
+        pose_landmarks  : latest pose_landmarks for drawing (or None)
+        tracking        : True when a pose is detected
+        hand_landmarks  : list of detected hand landmark sets (may be empty)
+        hand_open       : bool — True = open hand detected, False = closed fist
+                          (None if no hand visible)
     """
 
     def __init__(self, cam_index: int, cam_id: int):
         super().__init__(daemon=True, name=f"CamThread-{cam_id}")
         self.cam_index = cam_index
         self.cam_id = cam_id
-
         self.lock = threading.Lock()
         self.frame = None
         self.world_landmarks = None
         self.pose_landmarks = None
         self.tracking = False
+        self.hand_landmarks = []  # list of hand landmark objects
+        self.hand_open = None  # None = no hand; True = open; False = closed
+        self.hand_curl_ratios = None  # list of 4 floats (Index→Pinky) or None
         self._stop_event = threading.Event()
 
     def stop(self):
@@ -416,58 +763,106 @@ class CameraThread(threading.Thread):
 
     def run(self):
         mp_pose = mp.solutions.pose
+        mp_hands = mp.solutions.hands
         pose = mp_pose.Pose(
             model_complexity=1,
             smooth_landmarks=True,
             min_detection_confidence=0.6,
             min_tracking_confidence=0.6,
         )
-
+        hands = mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            model_complexity=0,  # fastest model
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.6,
+        )
         cap = cv2.VideoCapture(self.cam_index + cv2.CAP_DSHOW)
         if not cap.isOpened():
             print(
                 f"[CamThread-{self.cam_id}] WARNING: could not open camera {self.cam_index}"
             )
             return
-
         print(f"[CamThread-{self.cam_id}] Camera {self.cam_index} opened.")
+
+        # Debounce state (per thread)
+        _pending_open = None
+        _pending_frames = 0
 
         try:
             while not self._stop_event.is_set():
                 ret, bgr = cap.read()
                 if not ret:
                     continue
-
                 rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-                results = pose.process(rgb)
+                pose_results = pose.process(rgb)
+                hand_results = hands.process(rgb)
+
+                # ── hand state with debounce ──────────────────────────────────
+                raw_hand_lms = []
+                raw_open = None
+                raw_curls = None
+                if hand_results.multi_hand_landmarks:
+                    raw_hand_lms = hand_results.multi_hand_landmarks
+                    raw_curls = compute_finger_curls(raw_hand_lms[0])
+                    raw_open = (
+                        sum(1 for r in raw_curls if r < FINGER_CURL_THRESHOLD)
+                        < FINGER_CLOSED_COUNT
+                    )
+
+                # Debounce: only flip state after GRIPPER_DEBOUNCE_FRAMES
+                # consecutive frames of the new state
+                if raw_open is None:
+                    _pending_open = None
+                    _pending_frames = 0
+                    debounced_open = None
+                else:
+                    if raw_open == _pending_open:
+                        _pending_frames += 1
+                    else:
+                        _pending_open = raw_open
+                        _pending_frames = 1
+                    debounced_open = (
+                        raw_open
+                        if _pending_frames >= GRIPPER_DEBOUNCE_FRAMES
+                        else None  # still warming up — keep previous value
+                    )
 
                 with self.lock:
                     self.frame = bgr
-                    self.world_landmarks = results.pose_world_landmarks
-                    self.pose_landmarks = results.pose_landmarks
-                    self.tracking = results.pose_world_landmarks is not None
+                    self.world_landmarks = pose_results.pose_world_landmarks
+                    self.pose_landmarks = pose_results.pose_landmarks
+                    self.tracking = pose_results.pose_world_landmarks is not None
+                    self.hand_landmarks = raw_hand_lms
+                    self.hand_curl_ratios = (
+                        raw_curls  # always latest, no debounce needed
+                    )
+                    # Only update hand_open once debounce threshold is met
+                    if debounced_open is not None:
+                        self.hand_open = debounced_open
+                    elif raw_open is None:
+                        self.hand_open = None  # hand lost entirely
         finally:
             cap.release()
             pose.close()
+            hands.close()
             print(f"[CamThread-{self.cam_id}] Camera {self.cam_index} released.")
 
 
 def read_camera(cam_thread: CameraThread):
-    """Return a thread-safe snapshot of (frame, world_landmarks, pose_landmarks, tracking)."""
     with cam_thread.lock:
         return (
             cam_thread.frame.copy() if cam_thread.frame is not None else None,
             cam_thread.world_landmarks,
             cam_thread.pose_landmarks,
             cam_thread.tracking,
+            list(cam_thread.hand_landmarks),
+            cam_thread.hand_open,
+            list(cam_thread.hand_curl_ratios) if cam_thread.hand_curl_ratios else None,
         )
 
 
 def tile_frames(frames: list, widths: list) -> np.ndarray:
-    """
-    Horizontally concatenate BGR frames, each resized to its corresponding width.
-    `widths` must have the same length as `frames`.
-    """
     resized = []
     for f, tw in zip(frames, widths):
         if f is None:
@@ -475,7 +870,6 @@ def tile_frames(frames: list, widths: list) -> np.ndarray:
         h, w = f.shape[:2]
         th = max(1, int(h * tw / w))
         resized.append(cv2.resize(f, (tw, th)))
-    # Pad all tiles to the same height
     max_h = max(r.shape[0] for r in resized)
     padded = []
     for r in resized:
@@ -484,6 +878,117 @@ def tile_frames(frames: list, widths: list) -> np.ndarray:
             r = np.vstack([r, np.zeros((dh, r.shape[1], 3), dtype=np.uint8)])
         padded.append(r)
     return np.hstack(padded)
+
+
+# ── experiment factory helpers ────────────────────────────────────────────────
+def make_reach_experiment(sim, robot_shoulder_world):
+    return Experiment.from_hemisphere(
+        sim,
+        shoulder_pos=robot_shoulder_world,
+        arm_length=ROBOT_ARM_LENGTH,
+        n_trials=EXP_N_TRIALS,
+        radius=EXP_RADIUS,
+        dwell_time=EXP_DWELL_TIME,
+        timeout=EXP_TIMEOUT,
+        min_reach=EXP_MIN_REACH,
+        max_reach=EXP_MAX_REACH,
+        min_elevation=EXP_MIN_ELEVATION,
+        max_elevation=EXP_MAX_ELEVATION,
+        az_min=EXP_AZ_MIN,
+        az_max=EXP_AZ_MAX,
+        seed=EXP_SEED,
+    )
+
+
+def make_transport_experiment(sim, robot_shoulder_world):
+    return TransportExperiment.from_random(
+        sim,
+        shoulder_pos=robot_shoulder_world,
+        arm_length=ROBOT_ARM_LENGTH,
+        n_trials=TRANSPORT_N_TRIALS,
+        pick_radius=TRANSPORT_PICK_RADIUS,
+        drop_radius=TRANSPORT_DROP_RADIUS,
+        timeout=TRANSPORT_TIMEOUT,
+        min_reach=TRANSPORT_MIN_REACH,
+        max_reach=TRANSPORT_MAX_REACH,
+        min_elevation=TRANSPORT_MIN_ELEV,
+        max_elevation=TRANSPORT_MAX_ELEV,
+        az_min=TRANSPORT_AZ_MIN,
+        az_max=TRANSPORT_AZ_MAX,
+        seed=TRANSPORT_SEED,
+    )
+
+
+def save_results(experiment, mode):
+    """Persist experiment results to a timestamped CSV."""
+    results = experiment.results
+    if not results:
+        return
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"poseEstimation{mode.capitalize()}Results/{mode}_results_{ts}.csv"
+
+    if mode == MODE_REACH:
+        fieldnames = [
+            "trial",
+            "label",
+            "result",
+            "duration_s",
+            "target_x",
+            "target_y",
+            "target_z",
+        ]
+        trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
+        with open(filename, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in results:
+                pos = trial_defs.get(r["trial"], {}).get("pos", [None, None, None])
+                writer.writerow(
+                    {
+                        "trial": r["trial"],
+                        "label": r["label"],
+                        "result": r["result"],
+                        "duration_s": round(r["duration"], 3),
+                        "target_x": round(pos[0], 4) if pos[0] is not None else "",
+                        "target_y": round(pos[1], 4) if pos[1] is not None else "",
+                        "target_z": round(pos[2], 4) if pos[2] is not None else "",
+                    }
+                )
+    else:
+        fieldnames = [
+            "trial",
+            "label",
+            "result",
+            "duration_s",
+            "cube_x",
+            "cube_y",
+            "cube_z",
+            "drop_x",
+            "drop_y",
+            "drop_z",
+        ]
+        with open(filename, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in results:
+                cp = r.get("cube_pos", [None, None, None])
+                dp = r.get("drop_pos", [None, None, None])
+                writer.writerow(
+                    {
+                        "trial": r["trial"],
+                        "label": r["label"],
+                        "result": r["result"],
+                        "duration_s": round(r["duration"], 3),
+                        "cube_x": round(cp[0], 4) if cp[0] is not None else "",
+                        "cube_y": round(cp[1], 4) if cp[1] is not None else "",
+                        "cube_z": round(cp[2], 4) if cp[2] is not None else "",
+                        "drop_x": round(dp[0], 4) if dp[0] is not None else "",
+                        "drop_y": round(dp[1], 4) if dp[1] is not None else "",
+                        "drop_z": round(dp[2], 4) if dp[2] is not None else "",
+                    }
+                )
+    print(f"Results saved to {filename}")
+    print(experiment.summary())
 
 
 # ── CoppeliaSim setup ─────────────────────────────────────────────────────────
@@ -542,39 +1047,24 @@ try:
     print("Starting simulation...")
     sim.setStepping(True)
     sim.startSimulation()
+    sim.setInt32Signal(GRIPPER_SIGNAL, 0)  # start open
     print("Simulation started OK")
 
     robot_shoulder_world = sim.getObjectPosition(rightShoulderAbduct, -1)
-    experiment = Experiment.from_hemisphere(
-        sim,
-        shoulder_pos=robot_shoulder_world,
-        arm_length=ROBOT_ARM_LENGTH,
-        n_trials=EXP_N_TRIALS,
-        radius=EXP_RADIUS,
-        dwell_time=EXP_DWELL_TIME,
-        timeout=EXP_TIMEOUT,
-        min_reach=EXP_MIN_REACH,
-        max_reach=EXP_MAX_REACH,
-        min_elevation=EXP_MIN_ELEVATION,
-        max_elevation=EXP_MAX_ELEVATION,
-        az_min=EXP_AZ_MIN,
-        az_max=EXP_AZ_MAX,
-        seed=EXP_SEED,
-    )
-    print(
-        f"Experiment created — {EXP_N_TRIALS} targets placed on reachable hemisphere."
-    )
-    for i, t in enumerate(experiment._trial_defs):
-        print(f"  {i+1}. {t['pos']}")
 
     calibrator = ArmCalibrator(ROBOT_ARM_LENGTH)
-    print(f"Running with {len(cam_threads)} camera(s) — press Q to quit.")
-    print(
-        "Stretch your arm fully to calibrate reach mapping (takes ~1 s of full extension)."
-    )
-
     wrist_pos = list(robot_shoulder_world)
     prev_time = cv2.getTickCount()
+
+    # ── experiment state ──────────────────────────────────────────────────────
+    current_mode = MODE_SELECT  # start at the menu
+    experiment = None
+    summary_printed = False
+    gripper_open = True  # default: hand open
+
+    print("Press [R] for Reach experiment, [T] for Transport, [Q] to quit.")
+    print("Stretch your arm fully to calibrate reach mapping.")
+    print("Open hand = gripper open | Closed fist = gripper closed.")
 
     # ── main loop ─────────────────────────────────────────────────────────────
     while True:
@@ -582,20 +1072,29 @@ try:
         dt = (now - prev_time) / cv2.getTickFrequency()
         prev_time = now
 
-        # -- collect latest frame + landmarks from each camera -----------------
         snapshots = [read_camera(ct) for ct in cam_threads]
 
-        # -- pose fusion: primary first, then fallbacks ------------------------
+        # ── gripper state: OR gate across all cameras ─────────────────────────
+        hand_states = [snap[5] for snap in snapshots if snap[5] is not None]
+        if hand_states:
+            new_gripper_open = all(hand_states)
+            if new_gripper_open != gripper_open:
+                gripper_open = new_gripper_open
+                sim.setInt32Signal(GRIPPER_SIGNAL, 0 if gripper_open else 1)
+
+        # ── pose fusion ───────────────────────────────────────────────────────
         ordered = [PRIMARY_CAMERA] + [
             i for i in range(len(cam_threads)) if i != PRIMARY_CAMERA
         ]
 
         target_pos = None
         target_quat = None
-        source_idx = None  # which camera provided the pose this frame
+        source_idx = None
 
         for ci in ordered:
-            frame, wl_world, wl_img, tracking = snapshots[ci]
+            frame, wl_world, wl_img, tracking, hand_lms, hand_open_ci, _curl = (
+                snapshots[ci]
+            )
             if not tracking:
                 continue
             wl = wl_world.landmark
@@ -603,7 +1102,6 @@ try:
             he = vec3(wl[RIGHT_ELBOW])
             hw = vec3(wl[RIGHT_WRIST])
 
-            # Update calibration from the active camera's landmarks
             if ci == source_idx or source_idx is None:
                 calibrator.update(hs, he, hw, dt)
 
@@ -616,9 +1114,9 @@ try:
             )
             target_quat = compute_wrist_quaternion(hs, he, hw)
             source_idx = ci
-            break  # stop at the first camera that has a pose
+            break
 
-        # -- IK ----------------------------------------------------------------
+        # ── IK ────────────────────────────────────────────────────────────────
         if target_pos:
             sim.setObjectPosition(target, target_pos)
         if target_quat:
@@ -629,25 +1127,48 @@ try:
                 simIK.handleGroup(ikEnv, ikGroupDamped, {"syncWorlds": True})
 
         sim.step()
-
         wrist_pos = sim.getObjectPosition(rightWristLink, -1)
-        experiment.update(wrist_pos, dt)
 
-        if experiment.finished and not getattr(experiment, "_summary_printed", False):
-            print(experiment.summary())
-            experiment._summary_printed = True
+        # ── experiment update ─────────────────────────────────────────────────
+        if experiment is not None and current_mode != MODE_SELECT:
+            if current_mode == MODE_REACH:
+                experiment.update(wrist_pos, dt)
+            else:
+                # gripper_open comes from hand gesture detection (open palm = True)
+                experiment.update(wrist_pos, gripper_open, dt)
 
-        # -- annotate frames & tile -------------------------------------------
+            if experiment.finished and not summary_printed:
+                print(experiment.summary())
+                save_results(experiment, current_mode)
+                summary_printed = True
+
+        # ── render ────────────────────────────────────────────────────────────
         display_frames = []
         tile_widths = []
-        for ci, (frame, wl_world, wl_img, tracking) in enumerate(snapshots):
+
+        mp_hands = mp.solutions.hands
+        mp_draw_hand = mp.solutions.drawing_utils
+        hand_draw_spec = mp_draw_hand.DrawingSpec(
+            color=(255, 200, 0), thickness=1, circle_radius=2
+        )
+        hand_conn_spec = mp_draw_hand.DrawingSpec(color=(200, 150, 0), thickness=1)
+
+        for ci, (
+            frame,
+            wl_world,
+            wl_img,
+            tracking,
+            hand_lms,
+            hand_open_ci,
+            curl_ratios,
+        ) in enumerate(snapshots):
             is_hud_cam = ci == HUD_CAMERA
             tw = TILE_WIDTH if is_hud_cam else SECONDARY_TILE_WIDTH
 
             if frame is None:
                 frame = np.zeros((360, 640, 3), dtype=np.uint8)
 
-            # Skeleton overlay
+            # Pose skeleton
             if wl_img is not None:
                 mp_draw.draw_landmarks(
                     frame,
@@ -659,13 +1180,32 @@ try:
                     mp_draw.DrawingSpec(color=(0, 0, 255), thickness=2),
                 )
 
-            # Camera label + tracking status
+            # Hand skeleton overlay
+            for hl in hand_lms:
+                mp_draw_hand.draw_landmarks(
+                    frame,
+                    hl,
+                    mp_hands.HAND_CONNECTIONS,
+                    hand_draw_spec,
+                    hand_conn_spec,
+                )
+
+            # Curl meter — bottom-left on HUD cam, top-left on secondary cams
+            if curl_ratios is not None:
+                H_f = frame.shape[0]
+                if is_hud_cam:
+                    meter_origin = (10, H_f - 120)
+                    draw_curl_meter(
+                        frame, curl_ratios, meter_origin, label_prefix="finger curl"
+                    )
+                else:
+                    draw_curl_meter(frame, curl_ratios, (4, 30), label_prefix="curl")
+
             is_active = ci == source_idx
             label_txt = f"Cam {ci}" + (" [ACTIVE]" if is_active else "")
             status_col = (0, 255, 0) if tracking else (0, 0, 255)
 
             if is_hud_cam:
-                # Full annotations on the HUD camera
                 cv2.putText(
                     frame,
                     label_txt,
@@ -699,7 +1239,10 @@ try:
                     cal_txt = f"Reach cal: {calibrator.human_max_reach*100:.1f} cm  scale={calibrator.scale:.2f}"
                     cal_col = (0, 220, 100)
                 else:
-                    cal_txt = f"Reach cal: stretch arm to calibrate ({calibrator._samples}/{calibrator.MIN_SAMPLES})"
+                    cal_txt = (
+                        f"Reach cal: stretch arm to calibrate "
+                        f"({calibrator._samples}/{calibrator.MIN_SAMPLES})"
+                    )
                     cal_col = (0, 180, 220)
                 cv2.putText(
                     frame,
@@ -710,9 +1253,31 @@ try:
                     cal_col,
                     1,
                 )
-                draw_experiment_hud(frame, experiment, wrist_pos, dt)
+
+                # Gripper state indicator — OR gate across all cameras
+                seeing = [i for i, snap in enumerate(snapshots) if snap[5] is not None]
+                cam_note = (
+                    f"  (cam {','.join(str(i) for i in seeing)})" if seeing else ""
+                )
+                if not hand_states:
+                    g_txt = "HAND: not detected"
+                    g_col = (80, 80, 80)
+                elif gripper_open:
+                    g_txt = f"HAND: OPEN  [gripper open]{cam_note}"
+                    g_col = _cv_col(100, 220, 130)
+                else:
+                    g_txt = f"HAND: CLOSED  [gripper closed]{cam_note}"
+                    g_col = _cv_col(100, 180, 255)
+                cv2.putText(
+                    frame, g_txt, (10, 128), cv2.FONT_HERSHEY_SIMPLEX, 0.45, g_col, 1
+                )
+
+                # Experiment overlay
+                if current_mode == MODE_SELECT:
+                    draw_mode_select_hud(frame)
+                elif experiment is not None:
+                    draw_experiment_hud(frame, experiment, wrist_pos, dt, current_mode)
             else:
-                # Minimal label only on secondary cameras (text is scaled to fit)
                 cv2.putText(
                     frame,
                     label_txt,
@@ -728,11 +1293,38 @@ try:
 
         combined = tile_frames(display_frames, tile_widths)
         cv2.imshow("YuMi Pose Control — Multi-Camera", combined)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+
+        # ── key handling ──────────────────────────────────────────────────────
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
             break
+        elif key == ord("r"):
+            # Save current results before switching
+            if experiment is not None and experiment.results:
+                save_results(experiment, current_mode)
+            print("Starting Reach experiment...")
+            experiment = make_reach_experiment(sim, robot_shoulder_world)
+            current_mode = MODE_REACH
+            summary_printed = False
+            print(f"  {EXP_N_TRIALS} targets placed on reachable hemisphere.")
+        elif key == ord("t"):
+            if experiment is not None and experiment.results:
+                save_results(experiment, current_mode)
+            print("Starting Transport experiment...")
+            experiment = make_transport_experiment(sim, robot_shoulder_world)
+            current_mode = MODE_TRANSPORT
+            summary_printed = False
+            print(f"  {TRANSPORT_N_TRIALS} pick-and-place tasks created.")
 
 except KeyboardInterrupt:
     print("Interrupted.")
+
+except Exception as e:
+    import traceback
+
+    print("\n── FATAL ERROR ──────────────────────────────")
+    traceback.print_exc()
+    print("─────────────────────────────────────────────\n")
 
 finally:
     for ct in cam_threads:
@@ -741,41 +1333,13 @@ finally:
         ct.join(timeout=2.0)
 
     cv2.destroyAllWindows()
+    sim.clearInt32Signal(GRIPPER_SIGNAL)
     sim.stopSimulation()
     print("Simulation stopped.")
 
-    # -- save results ----------------------------------------------------------
-    exp_results = experiment.results if "experiment" in dir() else []
-    if exp_results:
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"poseEstimationReachResults/reach_results_{ts}.csv"
-        fieldnames = [
-            "trial",
-            "label",
-            "result",
-            "duration_s",
-            "target_x",
-            "target_y",
-            "target_z",
-        ]
-        trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
-        with open(filename, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for r in exp_results:
-                pos = trial_defs.get(r["trial"], {}).get("pos", [None, None, None])
-                writer.writerow(
-                    {
-                        "trial": r["trial"],
-                        "label": r["label"],
-                        "result": r["result"],
-                        "duration_s": round(r["duration"], 3),
-                        "target_x": round(pos[0], 4) if pos[0] is not None else "",
-                        "target_y": round(pos[1], 4) if pos[1] is not None else "",
-                        "target_z": round(pos[2], 4) if pos[2] is not None else "",
-                    }
-                )
-        print(f"Results saved to {filename}")
-        print(experiment.summary())
+    # Save any remaining results
+    if "experiment" in dir() and experiment is not None and experiment.results:
+        if not summary_printed:
+            save_results(experiment, current_mode)
     else:
         print("No results to save.")
