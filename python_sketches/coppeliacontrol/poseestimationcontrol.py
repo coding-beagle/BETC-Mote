@@ -53,12 +53,17 @@ GRIPPER_SIGNAL = "gripper_close"  # matches joystick controller: 1=close, 0=open
 # ── hand gesture configuration ────────────────────────────────────────────────
 # Finger curl threshold: fraction of max curl distance at which a finger counts
 # as "closed".  Lower = more sensitive (easier to trigger closed).
-FINGER_CURL_THRESHOLD = 1.1
+FINGER_CURL_THRESHOLD = 1.2
 # How many of the 4 non-thumb fingers must be curled to call the hand "closed"
 FINGER_CLOSED_COUNT = 3
 # Hysteresis: once open/closed, require this many consecutive frames of the
 # opposite state before flipping (prevents jitter).
 GRIPPER_DEBOUNCE_FRAMES = 4
+
+# ── pose smoothing ────────────────────────────────────────────────────────────
+# EMA alpha for position and quaternion (0 = frozen, 1 = no filtering).
+# Lower values = smoother but laggier.  0.15–0.25 is a good starting range.
+POSE_SMOOTH_ALPHA = 0.2
 
 # ── reach experiment configuration ────────────────────────────────────────────
 EXP_N_TRIALS = 10
@@ -74,14 +79,14 @@ EXP_AZ_MAX = 110.0
 EXP_SEED = None
 
 # ── transport experiment configuration ────────────────────────────────────────
-TRANSPORT_N_TRIALS = 5
+TRANSPORT_N_TRIALS = 10
 TRANSPORT_PICK_RADIUS = 0.06
 TRANSPORT_DROP_RADIUS = 0.06
-TRANSPORT_TIMEOUT = 30.0
-TRANSPORT_MIN_REACH = 0.5
-TRANSPORT_MAX_REACH = 0.80
-TRANSPORT_MIN_ELEV = -15.0
-TRANSPORT_MAX_ELEV = 45.0
+TRANSPORT_TIMEOUT = 100.0
+TRANSPORT_MIN_REACH = 0.8
+TRANSPORT_MAX_REACH = 0.9
+TRANSPORT_MIN_ELEV = -35.0
+TRANSPORT_MAX_ELEV = 50.0
 TRANSPORT_AZ_MIN = 20.0
 TRANSPORT_AZ_MAX = 110.0
 TRANSPORT_SEED = None
@@ -120,6 +125,69 @@ def vec_normalize(v):
 
 def remap_axes(v):
     return [-v[2], v[0], -v[1]]
+
+
+# ── pose low-pass filter ──────────────────────────────────────────────────────
+class PoseFilter:
+    """
+    Exponential moving average (EMA) for position + SLERP for quaternion.
+
+    Both use the same alpha:
+        smoothed = alpha * new + (1 - alpha) * previous
+
+    For quaternions this is done via SLERP so the interpolation always travels
+    the short way around the 4D sphere and never flips sign mid-motion.
+
+    alpha = 1.0  →  no filtering (pass-through)
+    alpha = 0.0  →  completely frozen
+    Typical range: 0.1 (very smooth, ~6-frame lag) to 0.4 (responsive).
+    """
+
+    def __init__(self, alpha: float = 0.2):
+        self.alpha = alpha
+        self._pos = None  # list[3] | None
+        self._quat = None  # list[4] xyzw | None
+
+    def update_pos(self, new_pos):
+        if new_pos is None:
+            return self._pos
+        if self._pos is None:
+            self._pos = list(new_pos)
+        else:
+            a = self.alpha
+            self._pos = [a * n + (1 - a) * p for n, p in zip(new_pos, self._pos)]
+        return self._pos
+
+    def update_quat(self, new_quat):
+        """SLERP from current to new_quat by alpha."""
+        if new_quat is None:
+            return self._quat
+        if self._quat is None:
+            self._quat = list(new_quat)
+            return self._quat
+
+        q0 = np.array(self._quat)  # xyzw
+        q1 = np.array(new_quat)
+
+        # Ensure shortest path
+        if np.dot(q0, q1) < 0:
+            q1 = -q1
+
+        result = self._slerp(q0, q1, self.alpha)
+        self._quat = result.tolist()
+        return self._quat
+
+    @staticmethod
+    def _slerp(q0, q1, t):
+        dot = float(np.clip(np.dot(q0, q1), -1.0, 1.0))
+        if abs(dot) > 0.9995:
+            # Quaternions are nearly identical — lerp + normalise
+            result = q0 + t * (q1 - q0)
+            return result / np.linalg.norm(result)
+        theta_0 = np.arccos(dot)
+        theta = theta_0 * t
+        sin_t0 = np.sin(theta_0)
+        return (np.sin(theta_0 - theta) / sin_t0) * q0 + (np.sin(theta) / sin_t0) * q1
 
 
 # ── arm-length calibration ────────────────────────────────────────────────────
@@ -1001,7 +1069,13 @@ rightShoulderAbduct = sim.getObject("/rightJoint1")
 rightWristLink = sim.getObject(
     "/rightJoint1/rightLink1/rightJoint2/rightLink2"
     "/rightJoint3/rightLink3/rightJoint4/rightLink4"
-    "/rightJoint5/rightLink5/rightJoint6/rightLink6"
+    "/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7/rightLink7"
+)
+
+rightGripperObject = sim.getObject(
+    "/rightJoint1/rightLink1/rightJoint2/rightLink2"
+    "/rightJoint3/rightLink3/rightJoint4/rightLink4"
+    "/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7/rightLink7/rightConnector/YuMiGripper/centerJoint/leftFinger"
 )
 
 target = sim.createDummy(0.02)
@@ -1053,6 +1127,7 @@ try:
     robot_shoulder_world = sim.getObjectPosition(rightShoulderAbduct, -1)
 
     calibrator = ArmCalibrator(ROBOT_ARM_LENGTH)
+    pose_filter = PoseFilter(alpha=POSE_SMOOTH_ALPHA)
     wrist_pos = list(robot_shoulder_world)
     prev_time = cv2.getTickCount()
 
@@ -1116,6 +1191,10 @@ try:
             source_idx = ci
             break
 
+        # ── smooth pose before sending to IK ─────────────────────────────────
+        target_pos = pose_filter.update_pos(target_pos)
+        target_quat = pose_filter.update_quat(target_quat)
+
         # ── IK ────────────────────────────────────────────────────────────────
         if target_pos:
             sim.setObjectPosition(target, target_pos)
@@ -1127,7 +1206,7 @@ try:
                 simIK.handleGroup(ikEnv, ikGroupDamped, {"syncWorlds": True})
 
         sim.step()
-        wrist_pos = sim.getObjectPosition(rightWristLink, -1)
+        wrist_pos = sim.getObjectPosition(rightGripperObject, -1)
 
         # ── experiment update ─────────────────────────────────────────────────
         if experiment is not None and current_mode != MODE_SELECT:
