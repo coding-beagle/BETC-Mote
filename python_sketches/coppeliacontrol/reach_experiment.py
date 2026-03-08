@@ -27,7 +27,8 @@ Usage – transport experiment:
     )
 
     # inside sim loop – pass gripper_open (True = open, False = closed)
-    exp.update(wrist_pos, gripper_open, dt)
+    # and the current start/resting position of the arm
+    exp.update(wrist_pos, gripper_open, dt, start_pos=arm_start_pos)
     exp.draw(screen, wrist_pos, fonts, dt)
 """
 
@@ -434,6 +435,14 @@ class Experiment:
 # The cube is simulated as a CoppeliaSim primitive shape. On GRIP the cube's
 # position is locked to follow the wrist each sim step. On PLACE it is
 # released.  A timeout covers the whole trial.
+#
+# Per-phase time splits are tracked cumulatively: if the trial regresses
+# (e.g. phase CARRY → APPROACH because gripper opened early) the time
+# already accumulated in each phase is preserved and keeps growing.
+#
+# start_pos is recorded at the beginning of the trial and used to compute
+# distances from the arm's resting position to the cube and drop zone,
+# giving a measure of task difficulty independent of arm length.
 # ═════════════════════════════════════════════════════════════════════════════
 
 _PHASE_APPROACH = "approach"
@@ -450,9 +459,23 @@ _PHASE_LABELS = {
     _PHASE_DONE: "Done!",
 }
 
+# Ordered list used for display / iteration
+_ALL_PHASES = [_PHASE_APPROACH, _PHASE_GRIP, _PHASE_CARRY, _PHASE_PLACE]
+
 
 class TransportTrial:
-    """Single pick-and-place trial."""
+    """
+    Single pick-and-place trial.
+
+    Parameters
+    ----------
+    start_pos : list[float] | None
+        World-space position of the arm at the moment the trial begins
+        (e.g. the neutral/rest pose wrist position). When provided it is
+        recorded and reported alongside the cube/drop distances so task
+        difficulty can be compared across conditions.  If None the first
+        wrist_pos passed to update() is used as the start position.
+    """
 
     def __init__(
         self,
@@ -463,6 +486,7 @@ class TransportTrial:
         drop_radius: float = 0.06,
         timeout: float = 30.0,
         label: str = "Transport",
+        start_pos: Optional[List[float]] = None,
     ):
         self.sim = sim
         self.cube_pos = list(cube_pos)
@@ -472,12 +496,21 @@ class TransportTrial:
         self.timeout = timeout
         self.label = label
 
+        # Starting arm position – may be set lazily on first update() call
+        self._start_pos: Optional[List[float]] = list(start_pos) if start_pos else None
+        self._start_pos_locked = start_pos is not None  # True once finalised
+
         self._phase = _PHASE_APPROACH
         self._result: Optional[str] = None
         self._elapsed = 0.0
         self._flash_t = 0.0
         self._gripped = False  # cube following wrist?
         self._current_cube_pos = list(cube_pos)
+
+        # ── per-phase cumulative time splits ──────────────────────────────────
+        # Accumulates wall-clock seconds spent in each phase across the whole
+        # trial, including any time after a regression back to an earlier phase.
+        self._phase_times: dict = {p: 0.0 for p in _ALL_PHASES}
 
         # Spawn sim objects
         self._cube_handle = self._spawn_cube(cube_pos)
@@ -525,6 +558,21 @@ class TransportTrial:
     def _dist(self, a, b):
         return math.sqrt(sum((a[i] - b[i]) ** 2 for i in range(3)))
 
+    # ── start-position distances (computed on demand once start_pos is known) ─
+    @property
+    def dist_start_to_cube(self) -> Optional[float]:
+        """Straight-line distance from the arm start position to the cube."""
+        if self._start_pos is None:
+            return None
+        return self._dist(self._start_pos, self.cube_pos)
+
+    @property
+    def dist_start_to_drop(self) -> Optional[float]:
+        """Straight-line distance from the arm start position to the drop zone."""
+        if self._start_pos is None:
+            return None
+        return self._dist(self._start_pos, self.drop_pos)
+
     # ── main update ───────────────────────────────────────────────────────────
     def update(
         self,
@@ -534,14 +582,31 @@ class TransportTrial:
     ) -> Optional[str]:
         """
         Call every sim step.
-        gripper_open: True = open (LT), False = closed (RT).
-        Returns result string once finished, else None.
+
+        Parameters
+        ----------
+        wrist_pos    : current world-space wrist position [x, y, z]
+        gripper_open : True = open (LT), False = closed (RT)
+        dt           : elapsed seconds since last call
+
+        Returns
+        -------
+        Result string once finished ("success" | "timeout"), else None.
         """
         if self._result is not None:
             self._flash_t = max(0.0, self._flash_t - dt)
             return self._result
 
+        # Latch start position on very first call if not provided at init
+        if not self._start_pos_locked:
+            self._start_pos = list(wrist_pos)
+            self._start_pos_locked = True
+
         self._elapsed += dt
+
+        # ── accumulate time in the current phase ──────────────────────────────
+        if self._phase in self._phase_times:
+            self._phase_times[self._phase] += dt
 
         # ── timeout ───────────────────────────────────────────────────────────
         if self.timeout > 0 and self._elapsed >= self.timeout:
@@ -551,7 +616,6 @@ class TransportTrial:
         # ── if cube is gripped, move it with the wrist ────────────────────────
         if self._gripped and self._cube_handle is not None:
             self._current_cube_pos = list(wrist_pos)
-            # -1 = world frame; must be explicit or CoppeliaSim may use parent frame
             self.sim.setObjectPosition(self._cube_handle, -1, wrist_pos)
 
         dist_to_cube = self._dist(wrist_pos, self._current_cube_pos)
@@ -607,6 +671,23 @@ class TransportTrial:
     def time_remaining(self) -> float:
         return max(0.0, self.timeout - self._elapsed)
 
+    @property
+    def phase_splits(self) -> dict:
+        """
+        Cumulative seconds spent in each phase, including any time accumulated
+        after regressions.  Keys are the phase name strings; values are floats.
+
+        Example
+        -------
+        {
+            "approach": 4.31,
+            "grip":     0.82,
+            "carry":    6.10,
+            "place":    1.05,
+        }
+        """
+        return dict(self._phase_times)
+
     # ── draw ──────────────────────────────────────────────────────────────────
     def draw(
         self,
@@ -635,8 +716,8 @@ class TransportTrial:
             return
 
         # ── HUD panel ─────────────────────────────────────────────────────────
-        panel_w, panel_h = 290, 140
-        px, py = W - panel_w - 10, 230
+        panel_w, panel_h = 310, 175
+        px, py = W - panel_w - 10, 210
         panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
         panel.fill((22, 22, 28, 190))
         surf.blit(panel, (px, py))
@@ -648,7 +729,7 @@ class TransportTrial:
 
         # Phase instruction
         instr = _PHASE_LABELS.get(self._phase, "")
-        surf.blit(fonts["sm"].render(instr, True, phase_col), (px + 10, py + 30))
+        surf.blit(fonts["sm"].render(instr, True, phase_col), (px + 10, py + 28))
 
         # Distances
         dist_cube = self._dist(wrist_pos, self._current_cube_pos)
@@ -660,7 +741,7 @@ class TransportTrial:
         else:
             d_txt = f"drop zone  {dist_drop * 100:.1f} cm away"
             d_col = C_HOT if dist_drop <= self.drop_radius else C_WARM
-        surf.blit(fonts["sm"].render(d_txt, True, d_col), (px + 10, py + 50))
+        surf.blit(fonts["sm"].render(d_txt, True, d_col), (px + 10, py + 46))
 
         # Gripper state indicator
         g_txt = (
@@ -669,16 +750,44 @@ class TransportTrial:
             else "gripper: CLOSED  (hold RT to open & place)"
         )
         g_col = C_IDLE if not self._gripped else C_HOT
-        surf.blit(fonts["sm"].render(g_txt, True, g_col), (px + 10, py + 68))
+        surf.blit(fonts["sm"].render(g_txt, True, g_col), (px + 10, py + 62))
+
+        # ── per-phase time split mini-bars ────────────────────────────────────
+        # Show each phase as a labelled bar whose width reflects the fraction of
+        # total elapsed time spent there.  The currently active phase pulses.
+        total_t = max(self._elapsed, 0.001)
+        bar_section_y = py + 82
+        bar_area_w = panel_w - 20
+        phase_short = {
+            "approach": "appr",
+            "grip": "grip",
+            "carry": "carr",
+            "place": "plac",
+        }
+        for i, ph in enumerate(_ALL_PHASES):
+            t = self._phase_times[ph]
+            frac = t / total_t
+            bw = int(bar_area_w * frac)
+            by = bar_section_y + i * 16
+            active = self._phase == ph
+            col = phase_col if active else C_TEXT_DIM
+            # background track
+            pygame.draw.rect(surf, (45, 45, 55), (px + 10, by, bar_area_w, 10))
+            if bw > 0:
+                pygame.draw.rect(surf, col, (px + 10, by, bw, 10))
+            lbl_txt = f"{phase_short.get(ph, ph)}  {t:.1f}s"
+            lbl_surf = fonts["sm"].render(lbl_txt, True, col)
+            surf.blit(lbl_surf, (px + 10 + bar_area_w + 4, by - 1))
 
         # Progress dots for phases
-        phases = [_PHASE_APPROACH, _PHASE_GRIP, _PHASE_CARRY, _PHASE_PLACE]
+        dot_row_y = py + panel_h - 20
+        phases = _ALL_PHASES
         dot_x = px + 10
         for i, ph in enumerate(phases):
             done_ph = phases.index(self._phase) > i
             active = self._phase == ph
             col = C_HOT if done_ph else (phase_col if active else (55, 55, 55))
-            pygame.draw.circle(surf, col, (dot_x + i * 60 + 15, py + panel_h - 18), 6)
+            pygame.draw.circle(surf, col, (dot_x + i * 60 + 15, dot_row_y), 6)
             step_lbl = fonts["sm"].render(
                 str(i + 1),
                 True,
@@ -688,7 +797,7 @@ class TransportTrial:
                 step_lbl,
                 (
                     dot_x + i * 60 + 15 - step_lbl.get_width() // 2,
-                    py + panel_h - 18 - step_lbl.get_height() // 2,
+                    dot_row_y - step_lbl.get_height() // 2,
                 ),
             )
             if i < len(phases) - 1:
@@ -696,8 +805,8 @@ class TransportTrial:
                 pygame.draw.line(
                     surf,
                     line_col,
-                    (dot_x + i * 60 + 21, py + panel_h - 18),
-                    (dot_x + (i + 1) * 60 + 9, py + panel_h - 18),
+                    (dot_x + i * 60 + 21, dot_row_y),
+                    (dot_x + (i + 1) * 60 + 9, dot_row_y),
                     2,
                 )
 
@@ -705,8 +814,17 @@ class TransportTrial:
         tr = self.time_remaining
         t_col = C_FAIL if tr < 5.0 else C_TEXT_DIM
         surf.blit(
-            fonts["sm"].render(f"time  {tr:.1f}s", True, t_col), (px + 10, py + 88)
+            fonts["sm"].render(f"time  {tr:.1f}s", True, t_col),
+            (px + 10, py + panel_h - 36),
         )
+
+        # Start-position distances (bottom-left corner, small)
+        if self._start_pos is not None:
+            d2c = self.dist_start_to_cube
+            d2d = self.dist_start_to_drop
+            info = f"start→cube {d2c*100:.0f}cm  start→drop {d2d*100:.0f}cm"
+            info_surf = fonts["sm"].render(info, True, C_TEXT_DIM)
+            surf.blit(info_surf, (10, H - 50))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -716,13 +834,27 @@ class TransportExperiment:
     """
     Manages a sequence of pick-and-place trials.
 
-    Call update(wrist_pos, gripper_open, dt) every sim step.
+    Call update(wrist_pos, gripper_open, dt, start_pos=...) every sim step.
     Call draw(screen, wrist_pos, fonts, dt) every pygame frame.
+
+    Parameters
+    ----------
+    start_pos : list[float] | None
+        If provided at construction time, every trial will be initialised with
+        this as the arm's starting position.  You can alternatively pass
+        start_pos per-call to update() to capture the live arm position at the
+        moment each trial begins.
     """
 
-    def __init__(self, sim, trials: List[dict]):
+    def __init__(
+        self,
+        sim,
+        trials: List[dict],
+        start_pos: Optional[List[float]] = None,
+    ):
         self.sim = sim
         self._trial_defs = trials
+        self._default_start_pos = list(start_pos) if start_pos else None
         self._index = 0
         self._results: List[dict] = []
         self._active: Optional[TransportTrial] = None
@@ -749,14 +881,20 @@ class TransportExperiment:
         az_max: float = 45.0,
         az_centre: float = -90.0,
         seed: int = None,
+        start_pos: Optional[List[float]] = None,
     ) -> "TransportExperiment":
         """
         Generate n_trials pick-and-place tasks with cube and drop positions
         sampled from the reachable hemisphere. Each pair is guaranteed to be
         spatially distinct (>= 15 cm apart).
+
+        Parameters
+        ----------
+        start_pos : list[float] | None
+            Arm starting / resting position for difficulty metrics.
+            Can also be supplied live via update().
         """
         rng = random.Random(seed)
-        # We need 2*n_trials positions; sample extra and pair them up.
         all_pos = sample_hemisphere_positions(
             shoulder=shoulder_pos,
             arm_length=arm_length,
@@ -785,14 +923,16 @@ class TransportExperiment:
                     "label": f"Transport {i+1}",
                 }
             )
-        return cls(sim, trials)
+        return cls(sim, trials, start_pos=start_pos)
 
     # ── spawn ─────────────────────────────────────────────────────────────────
-    def _spawn_next(self):
+    def _spawn_next(self, start_pos: Optional[List[float]] = None):
         if self._index >= len(self._trial_defs):
             self._active = None
             return
         cfg = self._trial_defs[self._index]
+        # Priority: caller-supplied > constructor default > lazy latch in update()
+        sp = start_pos or self._default_start_pos
         self._active = TransportTrial(
             sim=self.sim,
             cube_pos=cfg["cube_pos"],
@@ -801,14 +941,29 @@ class TransportExperiment:
             drop_radius=cfg.get("drop_radius", 0.06),
             timeout=cfg.get("timeout", 30.0),
             label=cfg.get("label", f"Transport {self._index + 1}"),
+            start_pos=sp,
         )
         self._trial_start = time.time()
 
     # ── update ────────────────────────────────────────────────────────────────
-    def update(self, wrist_pos: List[float], gripper_open: bool, dt: float):
+    def update(
+        self,
+        wrist_pos: List[float],
+        gripper_open: bool,
+        dt: float,
+        start_pos: Optional[List[float]] = None,
+    ):
         """
         Call every sim step.
-        gripper_open = True means the gripper is open (LT trigger held).
+
+        Parameters
+        ----------
+        wrist_pos    : current world-space wrist position [x, y, z]
+        gripper_open : True = open (LT), False = closed (RT)
+        dt           : seconds since last call
+        start_pos    : optional arm rest position – passed to the *next* trial
+                       when the current one ends, so you can supply the live
+                       neutral-pose wrist position at trial boundary.
         """
         if self._active is None:
             return
@@ -823,22 +978,29 @@ class TransportExperiment:
                     "label": self._active.label,
                     "result": result,
                     "duration": time.time() - self._trial_start,
+                    "phase_splits": self._active.phase_splits,
                     "cube_pos": self._trial_defs[self._index]["cube_pos"],
                     "drop_pos": self._trial_defs[self._index]["drop_pos"],
+                    "start_pos": self._active._start_pos,
+                    "dist_start_to_cube": self._active.dist_start_to_cube,
+                    "dist_start_to_drop": self._active.dist_start_to_drop,
                 }
             )
             self._index += 1
+            # Stash start_pos so _maybe_advance can forward it to next trial
+            self._pending_start_pos = start_pos or wrist_pos
 
-        self._maybe_advance()
+        self._maybe_advance(start_pos=start_pos)
 
-    def _maybe_advance(self):
+    def _maybe_advance(self, start_pos: Optional[List[float]] = None):
         if (
             self._active is not None
             and self._active.finished
             and self._active._flash_t <= 0
         ):
             self._result_logged = False
-            self._spawn_next()
+            sp = start_pos or getattr(self, "_pending_start_pos", None)
+            self._spawn_next(start_pos=sp)
 
     # ── draw ──────────────────────────────────────────────────────────────────
     def draw(
@@ -887,10 +1049,24 @@ class TransportExperiment:
     def summary(self) -> str:
         lines = ["─── Transport Experiment Results ───"]
         for r in self._results:
+            sp = r.get("phase_splits", {})
+            d2c = r.get("dist_start_to_cube")
+            d2d = r.get("dist_start_to_drop")
+            dist_info = (
+                f"  start→cube {d2c*100:.0f}cm  start→drop {d2d*100:.0f}cm"
+                if d2c is not None
+                else ""
+            )
+            splits_str = "  splits: " + "  ".join(
+                f"{ph[:4]}={sp.get(ph, 0.0):.2f}s" for ph in _ALL_PHASES
+            )
             lines.append(
                 f"  {r['trial']:2d}. {r['label']:22s}  "
                 f"{r['result']:8s}  {r['duration']:.2f}s"
             )
+            if dist_info:
+                lines.append(dist_info)
+            lines.append(splits_str)
         n_ok = sum(1 for r in self._results if r["result"] == "success")
         lines.append(
             f"\n  {n_ok}/{len(self._results)} delivered  "
@@ -938,9 +1114,13 @@ def _draw_summary(
 
     for i, r in enumerate(results):
         col = C_SUCCESS if r["result"] == "success" else C_FAIL
+        sp = r.get("phase_splits", {})
+        splits_str = " | ".join(
+            f"{ph[:4]} {sp.get(ph, 0.0):.1f}s" for ph in _ALL_PHASES
+        )
         txt = (
             f"  {r['trial']:2d}.  {r['label']:20s}  "
-            f"{r['result']:8s}  {r['duration']:.2f}s"
+            f"{r['result']:8s}  {r['duration']:.2f}s  [{splits_str}]"
         )
         lbl = fonts["sm"].render(txt, True, col)
-        surf.blit(lbl, (W // 2 - lbl.get_width() // 2, 135 + i * 20))
+        surf.blit(lbl, (W // 2 - lbl.get_width() // 2, 135 + i * 22))

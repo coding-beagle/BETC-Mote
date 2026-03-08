@@ -2,6 +2,15 @@
 Robot Arm Experiment Analyser
 ──────────────────────────────
 Run this script and use the file picker to select one or more CSV files (Group A).
+Handles both Reach experiment CSVs and Transport experiment CSVs automatically.
+
+Reach CSV columns (required):  result, duration_s, target_x, target_y, target_z
+Transport CSV columns:          result, duration_s,
+                                cube_x/y/z, drop_x/y/z,
+                                start_x/y/z (optional),
+                                dist_start_to_cube, dist_start_to_drop (optional),
+                                phase_approach_s, phase_grip_s,
+                                phase_carry_s, phase_place_s (optional)
 
 Figure 1 — Overview:
   • Left:  Overlaid normal distribution curves of successful run durations
@@ -14,6 +23,11 @@ Figure 2 — Comparison (shown when Group B is loaded):
   • Group A pooled vs Group B pooled for durations and speeds
   • Duration KDE overlay, box-plots, speed box-plot — all annotated with ANOVA
   • Group mean speed per move with ±1 SD band
+
+Figure 3 — Transport Phase Analysis (press P, transport CSVs only):
+  • Stacked bar charts of mean time per phase per experiment
+  • Box-plots comparing phase time distributions across groups
+  • Scatter: dist_start_to_cube vs duration (task difficulty proxy)
 """
 
 import sys
@@ -30,20 +44,50 @@ from scipy import stats
 # ── Disable conflicting matplotlib default keybindings ───────────────────────
 import matplotlib
 
-matplotlib.rcParams["keymap.home"] = []  # was 'h', 'r', 'home'
-matplotlib.rcParams["keymap.back"] = []  # was 'left', 'backspace', 'c', 'b'
-matplotlib.rcParams["keymap.forward"] = []  # was 'right', 'v', 'f'
+matplotlib.rcParams["keymap.home"] = []
+matplotlib.rcParams["keymap.back"] = []
+matplotlib.rcParams["keymap.forward"] = []
 
 # ── Colour palettes ───────────────────────────────────────────────────────────
-PALETTE_A = ["#4C72B0", "#55A868", "#64B5CD", "#3A9E7A", "#2E6FA3", "#76B7B2"]  # cool
-PALETTE_B = ["#DD8452", "#C44E52", "#E6A817", "#D45F86", "#C7622E", "#E8734A"]  # warm
+PALETTE_A = ["#4C72B0", "#55A868", "#64B5CD", "#3A9E7A", "#2E6FA3", "#76B7B2"]
+PALETTE_B = ["#DD8452", "#C44E52", "#E6A817", "#D45F86", "#C7622E", "#E8734A"]
+
+# Phase colours (consistent across all transport plots)
+PHASE_COLOURS = {
+    "approach": "#4C72B0",
+    "grip": "#55A868",
+    "carry": "#E6A817",
+    "place": "#C44E52",
+}
+PHASE_ORDER = ["approach", "grip", "carry", "place"]
 
 BG = "#F8F9FA"
 
 # ── Shared state ──────────────────────────────────────────────────────────────
-groups: dict = {"A": [], "B": []}  # each entry: name/df/color/durations/speeds
-group_titles: dict = {"A": "Group A", "B": "Group B"}  # user-editable display names
+groups: dict = {"A": [], "B": []}
+group_titles: dict = {"A": "Group A", "B": "Group B"}
 _comparison_fig = None
+
+
+# ── CSV type detection ────────────────────────────────────────────────────────
+
+
+def detect_csv_type(df: pd.DataFrame) -> str:
+    """Return 'transport' or 'reach' based on column presence."""
+    if "cube_x" in df.columns:
+        return "transport"
+    return "reach"
+
+
+def _has_phase_cols(df: pd.DataFrame) -> bool:
+    return "phase_approach_s" in df.columns
+
+
+def _has_start_cols(df: pd.DataFrame) -> bool:
+    return "dist_start_to_cube" in df.columns
+
+
+# ── Colour / title helpers ────────────────────────────────────────────────────
 
 
 def _color_for(group: str, index: int) -> str:
@@ -52,7 +96,6 @@ def _color_for(group: str, index: int) -> str:
 
 
 def _tk_root() -> tk.Tk:
-    """Return the single persistent hidden Tk root, creating it if needed."""
     if not hasattr(_tk_root, "_inst") or not _tk_root._inst.winfo_exists():
         root = tk.Tk()
         root.withdraw()
@@ -62,20 +105,16 @@ def _tk_root() -> tk.Tk:
 
 
 def _ask_title(group_key: str, default: str) -> str:
-    """Show a modal Toplevel dialog asking the user to name a group."""
     result = [default]
     root = _tk_root()
-
     win = tk.Toplevel(root)
     win.title("Name this group")
     win.resizable(False, False)
     win.attributes("-topmost", True)
     win.grab_set()
-
     tk.Label(
         win, text="Enter a display name for this group:", font=("Helvetica", 11), pady=8
     ).pack(padx=16)
-
     var = tk.StringVar(value=default)
     entry = tk.Entry(win, textvariable=var, font=("Helvetica", 11), width=28)
     entry.pack(padx=16, pady=4)
@@ -100,26 +139,45 @@ def _ask_title(group_key: str, default: str) -> str:
     )
     win.bind("<Return>", _ok)
     win.bind("<Escape>", _cancel)
-
     root.wait_window(win)
     return result[0]
 
 
+# ── CSV loading ───────────────────────────────────────────────────────────────
+
+
 def load_csv(path: Path):
-    """Return (success_df, total_row_count). Raises if no successful rows."""
+    """Return (success_df, total_row_count, csv_type). Raises if no successful rows."""
     raw = pd.read_csv(path)
     total = len(raw)
+    csv_type = detect_csv_type(raw)
     df = raw[raw["result"] == "success"].reset_index(drop=True)
     if df.empty:
         raise ValueError(f"No successful runs found in {path.name}")
-    return df, total
+    return df, total, csv_type
 
 
-def compute_speeds(df: pd.DataFrame) -> np.ndarray:
-    pos = df[["target_x", "target_y", "target_z"]].values
-    displacements = np.linalg.norm(np.diff(pos, axis=0), axis=1)
-    durations = df["duration_s"].values[1:]
-    return displacements / durations
+# ── Speed computation ─────────────────────────────────────────────────────────
+
+
+def compute_speeds(df: pd.DataFrame, csv_type: str) -> np.ndarray:
+    """
+    Reach:     speed = displacement between consecutive target positions / duration
+    Transport: speed = straight-line cube→drop distance / trial duration
+               (each trial is one move, so this gives m/s for the task)
+    """
+    if csv_type == "reach":
+        pos = df[["target_x", "target_y", "target_z"]].values
+        displacements = np.linalg.norm(np.diff(pos, axis=0), axis=1)
+        durations = df["duration_s"].values[1:]
+        return displacements / durations
+    else:
+        # cube→drop straight-line distance per trial
+        cube = df[["cube_x", "cube_y", "cube_z"]].values
+        drop = df[["drop_x", "drop_y", "drop_z"]].values
+        distances = np.linalg.norm(drop - cube, axis=1)
+        durations = df["duration_s"].values
+        return distances / np.where(durations > 0, durations, np.nan)
 
 
 def anova_summary(groups_data: list, metric: str) -> str:
@@ -128,14 +186,35 @@ def anova_summary(groups_data: list, metric: str) -> str:
     return f"One-way ANOVA — {metric}\nF = {f:.3f},  p = {p:.4f}  ({sig} at α=0.05)"
 
 
-def _build_entry(name: str, df: pd.DataFrame, color: str, total_rows: int) -> dict:
-    if len(df) < 2:
+def _build_entry(
+    name: str, df: pd.DataFrame, color: str, total_rows: int, csv_type: str
+) -> dict:
+    if len(df) < 2 and csv_type == "reach":
         print(
             f"  ⚠  {name}: only {len(df)} successful trial(s) — skipping speed computation"
         )
         speeds = np.array([])
     else:
-        speeds = compute_speeds(df)
+        speeds = compute_speeds(df, csv_type)
+
+    # Phase splits — only for transport with phase columns
+    phase_splits = {}
+    if csv_type == "transport" and _has_phase_cols(df):
+        for ph in PHASE_ORDER:
+            col = f"phase_{ph}_s"
+            if col in df.columns:
+                phase_splits[ph] = df[col].values
+
+    # Difficulty metrics
+    dist_start_to_cube = (
+        df["dist_start_to_cube"].values if _has_start_cols(df) else np.array([])
+    )
+    dist_start_to_drop = (
+        df["dist_start_to_drop"].values
+        if "dist_start_to_drop" in df.columns
+        else np.array([])
+    )
+
     return dict(
         name=name,
         df=df,
@@ -144,11 +223,14 @@ def _build_entry(name: str, df: pd.DataFrame, color: str, total_rows: int) -> di
         speeds=speeds,
         n_success=len(df),
         n_total=total_rows,
+        csv_type=csv_type,
+        phase_splits=phase_splits,  # dict: phase -> np.ndarray of per-trial times
+        dist_start_to_cube=dist_start_to_cube,
+        dist_start_to_drop=dist_start_to_drop,
     )
 
 
 def _pool_group(group_key: str):
-    """Return (pooled_durations, pooled_speeds) for all experiments in a group."""
     entries = groups[group_key]
     durs = (
         np.concatenate([e["durations"] for e in entries]) if entries else np.array([])
@@ -156,6 +238,19 @@ def _pool_group(group_key: str):
     spds_list = [e["speeds"] for e in entries if len(e["speeds"]) > 0]
     spds = np.concatenate(spds_list) if spds_list else np.array([])
     return durs, spds
+
+
+def _pool_phase_splits(group_key: str) -> dict:
+    """Pool per-trial phase times across all transport entries in a group."""
+    result = {ph: [] for ph in PHASE_ORDER}
+    for e in groups[group_key]:
+        if e["csv_type"] != "transport":
+            continue
+        for ph in PHASE_ORDER:
+            arr = e["phase_splits"].get(ph, np.array([]))
+            if len(arr):
+                result[ph].extend(arr.tolist())
+    return {ph: np.array(v) for ph, v in result.items()}
 
 
 def _load_files_dialog(title: str) -> list:
@@ -169,7 +264,6 @@ def _load_files_dialog(title: str) -> list:
 
 
 def _ingest_paths(paths: list, group_key: str):
-    """Load CSVs into the given group, avoiding name collisions across all groups."""
     existing = {e["name"] for g in groups.values() for e in g}
     for path in paths:
         name = path.stem
@@ -179,16 +273,17 @@ def _ingest_paths(paths: list, group_key: str):
             unique = f"{name}_{n}"
             n += 1
         try:
-            df, total_rows = load_csv(path)
+            df, total_rows, csv_type = load_csv(path)
         except Exception as exc:
             messagebox.showerror("Load error", str(exc))
             continue
         color = _color_for(group_key, len(groups[group_key]))
-        entry = _build_entry(unique, df, color, total_rows)
+        entry = _build_entry(unique, df, color, total_rows, csv_type)
         groups[group_key].append(entry)
         existing.add(unique)
+        type_tag = f"[{csv_type}]"
         print(
-            f"  ✓ Group {group_key}: {unique}  "
+            f"  ✓ Group {group_key}: {unique}  {type_tag}  "
             f"(n={len(entry['durations'])}  μ={entry['durations'].mean():.3f}s)"
         )
 
@@ -207,7 +302,6 @@ def build_overview_figure():
     ax1 = fig.add_subplot(1, 2, 1)
     ax2 = fig.add_subplot(1, 2, 2)
 
-    # Button axes — stored so we can show/hide them
     ax_btn_mode = fig.add_axes([0.05, 0.05, 0.14, 0.07])
     ax_btn_std = fig.add_axes([0.21, 0.05, 0.13, 0.07])
     ax_btn_skip = fig.add_axes([0.36, 0.05, 0.14, 0.07])
@@ -241,9 +335,6 @@ def build_overview_figure():
         ax_btn_ren_a,
         ax_btn_ren_b,
     ]
-
-    for b in (btn_mode, btn_std, btn_skip, btn_add_b, btn_add_a, btn_ren_a, btn_ren_b):
-        b.label.set_fontsize(9)
     fig._buttons = [
         btn_mode,
         btn_std,
@@ -253,6 +344,8 @@ def build_overview_figure():
         btn_ren_a,
         btn_ren_b,
     ]
+    for b in fig._buttons:
+        b.label.set_fontsize(9)
 
     def _maybe_std(data):
         mu, sigma = data.mean(), data.std()
@@ -319,8 +412,9 @@ def build_overview_figure():
         a.spines[["top", "right"]].set_visible(False)
         a.set_facecolor(BG)
 
-    def _active(arr):
-        if state["skip_first_move"] and len(arr) > 1:
+    def _active(arr, csv_type="reach"):
+        # skip_first_move only meaningful for reach (sequential targets)
+        if state["skip_first_move"] and csv_type == "reach" and len(arr) > 1:
             return arr[1:]
         return arr
 
@@ -329,41 +423,49 @@ def build_overview_figure():
         ax2.cla()
 
         if state["combined"]:
-            # One pooled curve per group
             for gk in ("A", "B"):
                 if not groups[gk]:
                     continue
                 col = groups[gk][0]["color"]
                 lbl = group_titles[gk]
                 durs, spds = _pool_group(gk)
-                _draw_normal(ax1, _active(durs), col, lbl, add_hist=True)
-                _draw_normal(ax2, _active(spds), col, lbl, add_hist=True)
+                _draw_normal(ax1, durs, col, lbl, add_hist=True)
+                _draw_normal(ax2, spds, col, lbl, add_hist=True)
             subtitle = "Combined (per group)"
         else:
-            # One curve per experiment; Group B dashed to distinguish at a glance
             for gk in ("A", "B"):
                 ls = "-" if gk == "A" else "--"
                 for e in groups[gk]:
                     _draw_normal(
                         ax1,
-                        _active(e["durations"]),
+                        _active(e["durations"], e["csv_type"]),
                         e["color"],
                         e["name"],
                         linestyle=ls,
                     )
                     _draw_normal(
-                        ax2, _active(e["speeds"]), e["color"], e["name"], linestyle=ls
+                        ax2,
+                        _active(e["speeds"], e["csv_type"]),
+                        e["color"],
+                        e["name"],
+                        linestyle=ls,
                     )
             subtitle = "Per Experiment"
+
+        # Right-axis label differs by dataset type
+        all_types = {e["csv_type"] for g in groups.values() for e in g}
+        if "transport" in all_types and "reach" not in all_types:
+            spd_label = "Task Speed (cube→drop dist / duration, m/s)"
+        elif "reach" in all_types and "transport" not in all_types:
+            spd_label = "Speed (units / s)"
+        else:
+            spd_label = "Speed (units / s  or  m/s)"
 
         dur_xl = "Duration (s)" + (
             "  [1st excluded]" if state["skip_first_move"] else ""
         )
-        spd_xl = "Speed (units / s)" + (
-            "  [1st move excluded]" if state["skip_first_move"] else ""
-        )
         _style(ax1, dur_xl, "Distribution of Run Durations")
-        _style(ax2, spd_xl, "Distribution of Within-Run Speeds")
+        _style(ax2, spd_label, "Distribution of Within-Run Speeds")
 
         tags = (["standardised"] if state["standardised"] else []) + (
             ["1st excluded"] if state["skip_first_move"] else []
@@ -413,13 +515,11 @@ def build_overview_figure():
         paths = _load_files_dialog(title)
         if not paths:
             return
-        # Ask for a group title the first time files are added to this group
         if not groups[group_key]:
             default = "Group A" if group_key == "A" else "Group B"
             group_titles[group_key] = _ask_title(group_key, default)
         _ingest_paths(paths, group_key)
         redraw()
-        # Rebuild comparison figure whenever both groups have data
         if groups["A"] and groups["B"]:
             if _comparison_fig is not None:
                 try:
@@ -456,15 +556,12 @@ def build_overview_figure():
     btn_ren_a.on_clicked(lambda e: _rename_group("A"))
     btn_ren_b.on_clicked(lambda e: _rename_group("B"))
 
-    # Return keyboard focus to the figure canvas after every button click so
-    # that H / M keybinds work without the user having to click the plot first.
     def _refocus(event=None):
         fig.canvas.get_tk_widget().focus_set()
 
     for _b in fig._buttons:
         _b.on_clicked(_refocus)
 
-    # ── Hide/show buttons (press H) ──────────────────────────────────────────
     state["btns_visible"] = True
 
     def _toggle_buttons(event=None):
@@ -472,13 +569,11 @@ def build_overview_figure():
         state["btns_visible"] = visible
         for ax in _btn_axes:
             ax.set_visible(visible)
-        # Shrink bottom margin when hidden so plots use the full height,
-        # restore it when shown so buttons don't overlap the axes.
         fig.subplots_adjust(bottom=0.22 if visible else 0.05)
         fig.canvas.draw_idle()
 
-    # ── M keybind: toggle success-rate metrics figure ────────────────────────
     _metrics_state = {"fig": None}
+    _phase_state = {"fig": None}
 
     def _toggle_metrics(event=None):
         existing = _metrics_state["fig"]
@@ -488,22 +583,42 @@ def build_overview_figure():
         else:
             mfig = build_metrics_figure()
             _metrics_state["fig"] = mfig
-            mfig.canvas.manager.show()  # makes the window appear when plt.show() is already running
+            mfig.canvas.manager.show()
             mfig.canvas.draw_idle()
+
+    def _toggle_phase(event=None):
+        existing = _phase_state["fig"]
+        if existing is not None and plt.fignum_exists(existing.number):
+            plt.close(existing)
+            _phase_state["fig"] = None
+        else:
+            transport_entries = [
+                e for g in groups.values() for e in g if e["csv_type"] == "transport"
+            ]
+            if not transport_entries:
+                messagebox.showinfo(
+                    "No transport data", "Load at least one transport CSV first."
+                )
+                return
+            pfig = build_phase_figure()
+            _phase_state["fig"] = pfig
+            pfig.canvas.manager.show()
+            pfig.canvas.draw_idle()
 
     def _on_key(event):
         if event.key == "h":
             _toggle_buttons()
         elif event.key == "m":
             _toggle_metrics()
+        elif event.key == "p":
+            _toggle_phase()
 
     fig.canvas.mpl_connect("key_press_event", _on_key)
-
     redraw()
     return fig
 
 
-# ── Comparison figure (Group A pooled vs Group B pooled) ──────────────────────
+# ── Comparison figure ─────────────────────────────────────────────────────────
 
 
 def build_comparison_figure():
@@ -520,10 +635,12 @@ def build_comparison_figure():
     fig.suptitle(f"{ta} vs {tb} — Pooled Comparison", fontsize=15, fontweight="bold")
     gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.65, wspace=0.35)
 
-    # ── Row 0: Duration KDE overlay ──
+    # Row 0: Duration KDE overlay
     ax_kde = fig.add_subplot(gs[0, :])
     ax_kde.set_facecolor(BG)
     for durs, col, lbl in [(dur_a, col_a, label_a), (dur_b, col_b, label_b)]:
+        if len(durs) == 0:
+            continue
         mu, sigma = durs.mean(), durs.std()
         x = np.linspace(max(0, durs.min() - 2), durs.max() + 2, 300)
         ax_kde.plot(
@@ -546,22 +663,20 @@ def build_comparison_figure():
     ax_kde.grid(axis="y", linestyle="--", alpha=0.4)
     ax_kde.spines[["top", "right"]].set_visible(False)
 
-    # ── Row 1a: Duration box-plot ──
+    # Row 1a: Duration box-plot
     ax_db = fig.add_subplot(gs[1, 0])
     ax_db.set_facecolor(BG)
-    bp1 = ax_db.boxplot(
-        [dur_a, dur_b], patch_artist=True, medianprops=dict(color="black", linewidth=2)
-    )
-    for patch, col in zip(bp1["boxes"], [col_a, col_b]):
-        patch.set_facecolor(col)
-        patch.set_alpha(0.65)
-    ax_db.set_xticks([1, 2])
-    ax_db.set_xticklabels([label_a, label_b], fontsize=9)
-    ax_db.set_ylabel("Duration (s)", fontsize=11)
-    ax_db.set_title("Duration Box-Plot", fontsize=12, fontweight="bold")
-    ax_db.grid(axis="y", linestyle="--", alpha=0.4)
-    ax_db.spines[["top", "right"]].set_visible(False)
-    if len(dur_a) > 0 and len(dur_b) > 0:
+    if len(dur_a) and len(dur_b):
+        bp1 = ax_db.boxplot(
+            [dur_a, dur_b],
+            patch_artist=True,
+            medianprops=dict(color="black", linewidth=2),
+        )
+        for patch, col in zip(bp1["boxes"], [col_a, col_b]):
+            patch.set_facecolor(col)
+            patch.set_alpha(0.65)
+        ax_db.set_xticks([1, 2])
+        ax_db.set_xticklabels([label_a, label_b], fontsize=9)
         ax_db.text(
             0.5,
             -0.28,
@@ -571,8 +686,12 @@ def build_comparison_figure():
             fontsize=9,
             bbox=dict(boxstyle="round,pad=0.4", fc="#EEF2FF", ec=col_a, alpha=0.9),
         )
+    ax_db.set_ylabel("Duration (s)", fontsize=11)
+    ax_db.set_title("Duration Box-Plot", fontsize=12, fontweight="bold")
+    ax_db.grid(axis="y", linestyle="--", alpha=0.4)
+    ax_db.spines[["top", "right"]].set_visible(False)
 
-    # ── Row 1b: Speed box-plot ──
+    # Row 1b: Speed box-plot
     ax_sb = fig.add_subplot(gs[1, 1])
     ax_sb.set_facecolor(BG)
     if len(spd_a) > 0 and len(spd_b) > 0:
@@ -595,12 +714,12 @@ def build_comparison_figure():
             fontsize=9,
             bbox=dict(boxstyle="round,pad=0.4", fc="#FFF5EE", ec=col_b, alpha=0.9),
         )
-    ax_sb.set_ylabel("Within-Run Speed (units / s)", fontsize=11)
+    ax_sb.set_ylabel("Speed (m/s or units/s)", fontsize=11)
     ax_sb.set_title("Speed Box-Plot", fontsize=12, fontweight="bold")
     ax_sb.grid(axis="y", linestyle="--", alpha=0.4)
     ax_sb.spines[["top", "right"]].set_visible(False)
 
-    # ── Row 2: Group mean speed per move with ±1 SD band ──
+    # Row 2: Group mean speed per move / trial with ±1 SD band
     ax_sl = fig.add_subplot(gs[2, :])
     ax_sl.set_facecolor(BG)
     for gk, col, lbl in [("A", col_a, ta), ("B", col_b, tb)]:
@@ -635,8 +754,8 @@ def build_comparison_figure():
             alpha=0.15,
             label=f"{lbl} ±1 SD",
         )
-    ax_sl.set_xlabel("Move Index (within run)", fontsize=11)
-    ax_sl.set_ylabel("Mean Speed (units / s)", fontsize=11)
+    ax_sl.set_xlabel("Move / Trial Index", fontsize=11)
+    ax_sl.set_ylabel("Mean Speed (m/s or units/s)", fontsize=11)
     ax_sl.set_title(
         "Group Mean Speed per Move  (±1 SD band)", fontsize=12, fontweight="bold"
     )
@@ -648,17 +767,10 @@ def build_comparison_figure():
     return fig
 
 
-# ── Metrics / success-rate figure (press M) ───────────────────────────────────
+# ── Metrics figure ────────────────────────────────────────────────────────────
 
 
 def build_metrics_figure():
-    """
-    Show success rates for every experiment, grouped by A and B.
-    Layout:
-      Row 0: one pie chart per group (pooled success vs failure)
-      Row 1: horizontal bar chart — per-experiment success rate, colour-coded by group
-    Press M again to close.
-    """
     has_b = bool(groups["B"])
     n_cols = 2 if has_b else 1
     ta, tb = group_titles["A"], group_titles["B"]
@@ -671,7 +783,7 @@ def build_metrics_figure():
         gridspec_kw={"height_ratios": [1, 1.6]},
     )
     if n_cols == 1:
-        axes = axes[:, np.newaxis]  # make indexing uniform
+        axes = axes[:, np.newaxis]
 
     fig.suptitle("Success Rate Analysis", fontsize=14, fontweight="bold")
     fig.patch.set_facecolor(BG)
@@ -680,7 +792,6 @@ def build_metrics_figure():
     if has_b:
         col_info.append(("B", tb, PALETTE_B[0]))
 
-    # ── Row 0: Pie charts ────────────────────────────────────────────────────
     for col_idx, (gk, title, col) in enumerate(col_info):
         ax = axes[0, col_idx]
         ax.set_facecolor(BG)
@@ -691,7 +802,7 @@ def build_metrics_figure():
         rate = success / total * 100 if total else 0
 
         wedge_colors = [col, "#D9D9D9"]
-        wedges, texts, autotexts = ax.pie(
+        _, _, autotexts = ax.pie(
             [success, failure],
             labels=["Success", "Failure"],
             colors=wedge_colors,
@@ -710,89 +821,331 @@ def build_metrics_figure():
             pad=12,
         )
 
-    # # ── Row 1: Horizontal bar chart — per experiment ─────────────────────────
-    # ax_bar = fig.add_subplot(2, 1, 2)  # spans full width
-    # # Remove the individual col axes from row 1 that subplots created
-    # for col_idx in range(n_cols):
-    #     axes[1, col_idx].remove()
+    return fig
 
-    # ax_bar.set_facecolor(BG)
 
-    # all_entries = []
-    # for gk, title, col in col_info:
-    #     for e in groups[gk]:
-    #         all_entries.append(
-    #             (e["name"], e["n_success"], e["n_total"], e["color"], gk, title)
-    #         )
+# ── Phase analysis figure (transport only, press P) ───────────────────────────
 
-    # Sort: Group A first, then B; within group alphabetical
-    # all_entries.sort(key=lambda x: (x[4], x[0]))
 
-    # names = [e[0] for e in all_entries]
-    # rates = [e[1] / e[2] * 100 if e[2] else 0 for e in all_entries]
-    # totals = [e[2] for e in all_entries]
-    # colors = [e[3] for e in all_entries]
-    # g_labels = [e[5] for e in all_entries]
+def build_phase_figure():
+    """
+    Four-row transport phase analysis:
 
-    # y = np.arange(len(names))
-    # bars = ax_bar.barh(
-    #     y, rates, color=colors, alpha=0.75, edgecolor="white", linewidth=1.2
-    # )
+    Row 0 (full width): Stacked bar — mean time per phase, one bar per experiment.
+                        Bars are grouped by group (A left, B right).
+    Row 1:              Pie charts — average proportion of trial time spent in each
+                        phase.  One pie per loaded group, plus a combined pie when
+                        both groups are present.
+    Row 2 left:         Box-plots of per-trial phase times pooled across all
+                        transport entries, one box per phase, both groups overlaid.
+    Row 2 right:        Scatter — dist_start_to_cube vs trial duration,
+                        coloured by group, with linear regression lines.
+                        (Only shown if dist columns are present.)
+    """
+    ta, tb = group_titles["A"], group_titles["B"]
+    has_b_group = bool(groups["B"]) and any(
+        e["csv_type"] == "transport" for e in groups["B"]
+    )
 
-    # # Annotate each bar with "X/N (R%)"
-    # for i, (bar, entry) in enumerate(zip(bars, all_entries)):
-    #     n_ok, n_tot = entry[1], entry[2]
-    #     r = n_ok / n_tot * 100 if n_tot else 0
-    #     ax_bar.text(
-    #         min(r + 1.5, 101),
-    #         i,
-    #         f"{n_ok}/{n_tot}  ({r:.1f}%)",
-    #         va="center",
-    #         ha="left",
-    #         fontsize=9,
-    #         color="#333333",
-    #     )
+    # Pie row: 2 pies if only A, 3 if both A and B
+    n_pies = 3 if has_b_group else 2  # per-group + combined  (or just A + combined)
+    pie_cols = n_pies
 
-    # # Draw a faint vertical line at 100 %
-    # ax_bar.axvline(100, color="#AAAAAA", linewidth=1, linestyle="--", alpha=0.6)
+    fig = plt.figure(figsize=(16, 15), num="Phase Analysis")
+    fig.suptitle("Transport Phase Analysis", fontsize=14, fontweight="bold")
 
-    # Group separators: draw a horizontal rule between A and B
-    # if has_b:
-    #     n_a = sum(1 for e in all_entries if e[4] == "A")
-    #     ax_bar.axhline(n_a - 0.5, color="#888888", linewidth=1.2, linestyle=":")
+    # GridSpec: row 0 = stacked bar (full width), row 1 = pies, row 2 = box + scatter
+    gs = gridspec.GridSpec(
+        3,
+        pie_cols,
+        figure=fig,
+        hspace=0.65,
+        wspace=0.38,
+        height_ratios=[1.1, 1.2, 1.1],
+    )
 
-    #     # Group label annotations on the right margin
-    #     ax_bar.text(
-    #         105,
-    #         (n_a - 1) / 2,
-    #         ta,
-    #         va="center",
-    #         ha="left",
-    #         fontsize=10,
-    #         color=PALETTE_A[0],
-    #         fontweight="bold",
-    #     )
-    #     ax_bar.text(
-    #         105,
-    #         n_a + (len(names) - n_a - 1) / 2,
-    #         tb,
-    #         va="center",
-    #         ha="left",
-    #         fontsize=10,
-    #         color=PALETTE_B[0],
-    #         fontweight="bold",
-    #     )
+    ax_stack = fig.add_subplot(gs[0, :])
+    ax_box = fig.add_subplot(gs[2, : pie_cols // 2])
+    ax_scatter = fig.add_subplot(gs[2, pie_cols // 2 :])
 
-    # ax_bar.set_yticks(y)
-    # ax_bar.set_yticklabels(names, fontsize=9)
-    # ax_bar.set_xlim(0, 115)
-    # ax_bar.set_xlabel("Success Rate (%)", fontsize=11)
-    # ax_bar.set_title("Per-Experiment Success Rate", fontsize=12, fontweight="bold")
-    # ax_bar.invert_yaxis()
-    # ax_bar.spines[["top", "right"]].set_visible(False)
-    # ax_bar.grid(axis="x", linestyle="--", alpha=0.4)
+    for ax in (ax_stack, ax_box, ax_scatter):
+        ax.set_facecolor(BG)
+        ax.spines[["top", "right"]].set_visible(False)
 
-    # fig.tight_layout(rect=[0, 0, 1, 0.95])
+    # Pie axes are created later, after we know how many groups have data
+
+    # Collect all transport entries across both groups, tagged with group
+    all_transport = []
+    for gk in ("A", "B"):
+        for e in groups[gk]:
+            if e["csv_type"] == "transport":
+                all_transport.append((gk, e))
+
+    if not all_transport:
+        ax_stack.text(
+            0.5,
+            0.5,
+            "No transport data loaded.",
+            ha="center",
+            va="center",
+            transform=ax_stack.transAxes,
+            fontsize=13,
+        )
+        fig.tight_layout()
+        return fig
+
+    # ── Row 0: Stacked bar — mean phase time per experiment ──────────────────
+    bar_labels = []
+    bar_bottoms = np.zeros(len(all_transport))
+    phase_handles = {}
+
+    for ph_idx, ph in enumerate(PHASE_ORDER):
+        ph_means = []
+        for gk, e in all_transport:
+            arr = e["phase_splits"].get(ph, np.array([]))
+            ph_means.append(arr.mean() if len(arr) > 0 else 0.0)
+        ph_col = PHASE_COLOURS[ph]
+        bars = ax_stack.bar(
+            range(len(all_transport)),
+            ph_means,
+            bottom=bar_bottoms,
+            color=ph_col,
+            alpha=0.82,
+            label=ph.capitalize(),
+            edgecolor="white",
+            linewidth=0.6,
+        )
+        phase_handles[ph] = bars[0]
+        bar_bottoms += np.array(ph_means)
+
+    # Build x-axis labels, mark group boundary
+    x_labels = []
+    for gk, e in all_transport:
+        prefix = "A·" if gk == "A" else "B·"
+        x_labels.append(prefix + e["name"])
+
+    ax_stack.set_xticks(range(len(all_transport)))
+    ax_stack.set_xticklabels(x_labels, rotation=30, ha="right", fontsize=9)
+    ax_stack.set_ylabel("Mean Time per Phase (s)", fontsize=11)
+    ax_stack.set_title(
+        "Mean Phase Time per Experiment (stacked)", fontsize=12, fontweight="bold"
+    )
+    ax_stack.legend(
+        handles=list(phase_handles.values()),
+        labels=[ph.capitalize() for ph in PHASE_ORDER],
+        fontsize=9,
+        loc="upper right",
+    )
+    ax_stack.grid(axis="y", linestyle="--", alpha=0.4)
+
+    # Draw group-boundary separator line
+    n_a = sum(1 for gk, _ in all_transport if gk == "A")
+    if 0 < n_a < len(all_transport):
+        ax_stack.axvline(
+            n_a - 0.5, color="black", linewidth=1.2, linestyle="--", alpha=0.5
+        )
+        ax_stack.text(
+            n_a - 0.5,
+            ax_stack.get_ylim()[1] * 0.98,
+            f"← {ta}   {tb} →",
+            ha="center",
+            va="top",
+            fontsize=8,
+            color="black",
+        )
+
+    # ── Row 1: Pie charts — average phase-time proportions ───────────────────
+    # Build one pie per group (only transport entries), plus a combined pie.
+    pie_specs = []  # list of (title, {ph: mean_seconds})
+    for gk, label in [("A", ta), ("B", tb)]:
+        t_entries = [e for e in groups[gk] if e["csv_type"] == "transport"]
+        if not t_entries:
+            continue
+        splits = _pool_phase_splits(gk)
+        means = {
+            ph: splits[ph].mean() if len(splits[ph]) > 0 else 0.0 for ph in PHASE_ORDER
+        }
+        if sum(means.values()) > 0:
+            pie_specs.append((label, means))
+
+    # Combined pie (all transport entries regardless of group)
+    all_splits = {ph: [] for ph in PHASE_ORDER}
+    for gk in ("A", "B"):
+        s = _pool_phase_splits(gk)
+        for ph in PHASE_ORDER:
+            if len(s[ph]):
+                all_splits[ph].extend(s[ph].tolist())
+    combined_means = {ph: np.mean(v) if v else 0.0 for ph, v in all_splits.items()}
+    if sum(combined_means.values()) > 0:
+        pie_specs.append(("Combined", combined_means))
+
+    pie_colours = [PHASE_COLOURS[ph] for ph in PHASE_ORDER]
+    pie_explode = [0.03] * len(PHASE_ORDER)  # slight separation on every slice
+
+    for pie_idx, (pie_title, means) in enumerate(pie_specs):
+        col_span = pie_cols // len(pie_specs) if len(pie_specs) <= pie_cols else 1
+        # Spread pies evenly; if only 1 spec, centre it
+        if len(pie_specs) == 1:
+            ax_pie = fig.add_subplot(gs[1, 1])
+        else:
+            ax_pie = fig.add_subplot(gs[1, pie_idx])
+
+        values = [means[ph] for ph in PHASE_ORDER]
+        total = sum(values)
+        labels = [
+            (
+                f"{ph.capitalize()}\n{means[ph]:.2f}s\n({means[ph]/total*100:.1f}%)"
+                if total > 0
+                else ph.capitalize()
+            )
+            for ph in PHASE_ORDER
+        ]
+
+        wedges, texts = ax_pie.pie(
+            values,
+            labels=labels,
+            colors=pie_colours,
+            explode=pie_explode,
+            startangle=90,
+            wedgeprops=dict(edgecolor="white", linewidth=1.6),
+            textprops=dict(fontsize=8.5),
+            labeldistance=1.18,
+        )
+        for w in wedges:
+            w.set_alpha(0.88)
+
+        ax_pie.set_title(
+            f"{pie_title}\nAvg phase breakdown  (total {total:.2f}s)",
+            fontsize=10,
+            fontweight="bold",
+            pad=10,
+        )
+
+    # ── Row 2 left: Box-plots of per-trial phase times by group ──────────────
+    has_b_transport = any(gk == "B" for gk, _ in all_transport)
+    n_phase_groups = 2 if has_b_transport else 1
+    positions = []
+    box_data = []
+    tick_pos = []
+    tick_lbl = []
+
+    group_keys_present = ["A"] + (["B"] if has_b_transport else [])
+    group_cols = {"A": PALETTE_A[0], "B": PALETTE_B[0]}
+
+    spacing = n_phase_groups + 1
+    for ph_idx, ph in enumerate(PHASE_ORDER):
+        base = ph_idx * spacing
+        tick_pos.append(base + (n_phase_groups - 1) / 2)
+        tick_lbl.append(ph.capitalize())
+        for gi, gk in enumerate(group_keys_present):
+            splits = _pool_phase_splits(gk)
+            arr = splits.get(ph, np.array([]))
+            if len(arr) == 0:
+                arr = np.array([0.0])
+            pos = base + gi
+            positions.append(pos)
+            box_data.append(arr)
+
+    bp = ax_box.boxplot(
+        box_data,
+        positions=positions,
+        widths=0.6,
+        patch_artist=True,
+        medianprops=dict(color="black", linewidth=1.8),
+        whiskerprops=dict(linewidth=1.2),
+        capprops=dict(linewidth=1.2),
+    )
+    for i, (patch, pos) in enumerate(zip(bp["boxes"], positions)):
+        gk = group_keys_present[i % n_phase_groups]
+        patch.set_facecolor(group_cols[gk])
+        patch.set_alpha(0.65)
+
+    ax_box.set_xticks(tick_pos)
+    ax_box.set_xticklabels(tick_lbl, fontsize=10)
+    ax_box.set_ylabel("Phase Duration (s)", fontsize=11)
+    ax_box.set_title(
+        "Phase Time Distributions by Group", fontsize=12, fontweight="bold"
+    )
+    ax_box.grid(axis="y", linestyle="--", alpha=0.4)
+
+    # Legend for group colours
+    from matplotlib.patches import Patch
+
+    legend_patches = [
+        Patch(facecolor=group_cols[gk], alpha=0.65, label=group_titles[gk])
+        for gk in group_keys_present
+    ]
+    ax_box.legend(handles=legend_patches, fontsize=9)
+
+    # ── Row 2 right: Scatter — dist_start_to_cube vs duration ───────────────
+    has_dist_data = any(len(e["dist_start_to_cube"]) > 0 for _, e in all_transport)
+
+    if has_dist_data:
+        for gk, col, lbl in [("A", PALETTE_A[0], ta), ("B", PALETTE_B[0], tb)]:
+            entries_t = [e for g, e in all_transport if g == gk]
+            if not entries_t:
+                continue
+            d_arr = np.concatenate(
+                [
+                    e["dist_start_to_cube"]
+                    for e in entries_t
+                    if len(e["dist_start_to_cube"]) > 0
+                ]
+            )
+            dur_arr = np.concatenate(
+                [e["durations"] for e in entries_t if len(e["dist_start_to_cube"]) > 0]
+            )
+            if len(d_arr) < 2:
+                continue
+            ax_scatter.scatter(
+                d_arr * 100,
+                dur_arr,
+                color=col,
+                alpha=0.55,
+                s=35,
+                label=lbl,
+                edgecolors="white",
+                linewidth=0.4,
+            )
+            # Linear regression
+            slope, intercept, r, p_val, _ = stats.linregress(d_arr, dur_arr)
+            x_fit = np.linspace(d_arr.min(), d_arr.max(), 100)
+            sig_txt = "✓" if p_val < 0.05 else "✗"
+            ax_scatter.plot(
+                x_fit * 100,
+                slope * x_fit + intercept,
+                color=col,
+                linewidth=1.8,
+                linestyle="--",
+                label=f"{lbl} fit  r={r:.2f} {sig_txt}",
+            )
+
+        ax_scatter.set_xlabel("Distance: Start → Cube (cm)", fontsize=11)
+        ax_scatter.set_ylabel("Trial Duration (s)", fontsize=11)
+        ax_scatter.set_title(
+            "Task Difficulty: Start Distance vs Duration",
+            fontsize=12,
+            fontweight="bold",
+        )
+        ax_scatter.legend(fontsize=8)
+        ax_scatter.grid(linestyle="--", alpha=0.4)
+    else:
+        ax_scatter.text(
+            0.5,
+            0.5,
+            "No start-position data available.\n"
+            "(requires start_x/y/z columns in CSV)",
+            ha="center",
+            va="center",
+            transform=ax_scatter.transAxes,
+            fontsize=10,
+            color="#888888",
+        )
+        ax_scatter.set_title(
+            "Task Difficulty (no start-pos data)", fontsize=12, fontweight="bold"
+        )
+
+    fig.tight_layout()
     return fig
 
 
@@ -800,7 +1153,8 @@ def _print_anova():
     dur_a, spd_a = _pool_group("A")
     dur_b, spd_b = _pool_group("B")
     ta, tb = group_titles["A"], group_titles["B"]
-    print("\n" + anova_summary([dur_a, dur_b], f"Duration ({ta} vs {tb})"))
+    if len(dur_a) and len(dur_b):
+        print("\n" + anova_summary([dur_a, dur_b], f"Duration ({ta} vs {tb})"))
     if len(spd_a) and len(spd_b):
         print(anova_summary([spd_a, spd_b], f"Speed ({ta} vs {tb})"))
 
@@ -821,7 +1175,6 @@ def main():
         messagebox.showinfo("No files selected", "No files were selected. Exiting.")
         sys.exit(0)
 
-    # Ask for Group A's title before loading
     group_titles["A"] = _ask_title("A", "Group A")
 
     print(f"\n{group_titles['A']} — loading {len(paths)} file(s):")
@@ -829,6 +1182,12 @@ def main():
 
     if not groups["A"]:
         sys.exit(1)
+
+    # Print keybinds reminder
+    print("\nKeybinds (click plot first):")
+    print("  H — toggle button bar")
+    print("  M — toggle success-rate figure")
+    print("  P — toggle phase analysis figure  (transport CSVs only)")
 
     build_overview_figure()
     plt.show()

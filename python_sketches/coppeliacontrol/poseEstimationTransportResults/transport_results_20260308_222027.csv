@@ -1,0 +1,2 @@
+trial,label,result,duration_s,cube_x,cube_y,cube_z,drop_x,drop_y,drop_z,start_x,start_y,start_z,dist_start_to_cube,dist_start_to_drop,phase_approach_s,phase_grip_s,phase_carry_s,phase_place_s
+1,Transport 1,timeout,29.999,0.7326,-0.0233,0.9332,0.6906,-0.1184,1.227,0.5999,0.0663,0.6924,0.2892,0.5729,9.287,5.598,15.133,0.0

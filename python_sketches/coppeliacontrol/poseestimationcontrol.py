@@ -82,13 +82,13 @@ EXP_SEED = None
 TRANSPORT_N_TRIALS = 10
 TRANSPORT_PICK_RADIUS = 0.06
 TRANSPORT_DROP_RADIUS = 0.06
-TRANSPORT_TIMEOUT = 100.0
-TRANSPORT_MIN_REACH = 0.8
+TRANSPORT_TIMEOUT = 30.0
+TRANSPORT_MIN_REACH = 0.85
 TRANSPORT_MAX_REACH = 0.9
 TRANSPORT_MIN_ELEV = -35.0
 TRANSPORT_MAX_ELEV = 50.0
-TRANSPORT_AZ_MIN = 20.0
-TRANSPORT_AZ_MAX = 110.0
+TRANSPORT_AZ_MIN = 50.0
+TRANSPORT_AZ_MAX = 90.0
 TRANSPORT_SEED = None
 
 # ── experiment mode ────────────────────────────────────────────────────────────
@@ -968,7 +968,7 @@ def make_reach_experiment(sim, robot_shoulder_world):
     )
 
 
-def make_transport_experiment(sim, robot_shoulder_world):
+def make_transport_experiment(sim, robot_shoulder_world, start_pos=None):
     return TransportExperiment.from_random(
         sim,
         shoulder_pos=robot_shoulder_world,
@@ -984,6 +984,7 @@ def make_transport_experiment(sim, robot_shoulder_world):
         az_min=TRANSPORT_AZ_MIN,
         az_max=TRANSPORT_AZ_MAX,
         seed=TRANSPORT_SEED,
+        start_pos=start_pos,
     )
 
 
@@ -1034,6 +1035,15 @@ def save_results(experiment, mode):
             "drop_x",
             "drop_y",
             "drop_z",
+            "start_x",
+            "start_y",
+            "start_z",  # ← add
+            "dist_start_to_cube",
+            "dist_start_to_drop",  # ← add
+            "phase_approach_s",
+            "phase_grip_s",  # ← add
+            "phase_carry_s",
+            "phase_place_s",  # ← add
         ]
         with open(filename, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -1041,6 +1051,8 @@ def save_results(experiment, mode):
             for r in results:
                 cp = r.get("cube_pos", [None, None, None])
                 dp = r.get("drop_pos", [None, None, None])
+                sp = r.get("phase_splits", {})
+                spos = r.get("start_pos") or [None, None, None]
                 writer.writerow(
                     {
                         "trial": r["trial"],
@@ -1053,6 +1065,23 @@ def save_results(experiment, mode):
                         "drop_x": round(dp[0], 4) if dp[0] is not None else "",
                         "drop_y": round(dp[1], 4) if dp[1] is not None else "",
                         "drop_z": round(dp[2], 4) if dp[2] is not None else "",
+                        "start_x": round(spos[0], 4) if spos[0] is not None else "",
+                        "start_y": round(spos[1], 4) if spos[1] is not None else "",
+                        "start_z": round(spos[2], 4) if spos[2] is not None else "",
+                        "dist_start_to_cube": (
+                            round(r["dist_start_to_cube"], 4)
+                            if r.get("dist_start_to_cube") is not None
+                            else ""
+                        ),
+                        "dist_start_to_drop": (
+                            round(r["dist_start_to_drop"], 4)
+                            if r.get("dist_start_to_drop") is not None
+                            else ""
+                        ),
+                        "phase_approach_s": round(sp.get("approach", 0.0), 3),
+                        "phase_grip_s": round(sp.get("grip", 0.0), 3),
+                        "phase_carry_s": round(sp.get("carry", 0.0), 3),
+                        "phase_place_s": round(sp.get("place", 0.0), 3),
                     }
                 )
     print(f"Results saved to {filename}")
@@ -1390,7 +1419,9 @@ try:
             if experiment is not None and experiment.results:
                 save_results(experiment, current_mode)
             print("Starting Transport experiment...")
-            experiment = make_transport_experiment(sim, robot_shoulder_world)
+            experiment = make_transport_experiment(
+                sim, robot_shoulder_world, start_pos=wrist_pos
+            )
             current_mode = MODE_TRANSPORT
             summary_printed = False
             print(f"  {TRANSPORT_N_TRIALS} pick-and-place tasks created.")

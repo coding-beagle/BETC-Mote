@@ -48,7 +48,7 @@ BUTTON_LAYOUT = {
 # ── experiment type ───────────────────────────────────────────────────────────
 # Set to "reach" for the standard reach-to-target experiment, or
 # "transport" for the pick-and-place cube transport experiment.
-EXP_TYPE = "reach"  # "reach"  |  "transport"
+EXP_TYPE = "transport"  # "reach"  |  "transport"
 
 # ── reach experiment configuration ───────────────────────────────────────────
 EXP_N_TRIALS = 10
@@ -276,6 +276,7 @@ try:
             az_min=TRN_AZ_MIN,
             az_max=TRN_AZ_MAX,
             seed=TRN_SEED,
+            start_pos=target_pos,
         )
         print(f"Transport experiment created — {TRN_N_TRIALS} pick-and-place trials.")
         for i, t in enumerate(experiment._trial_defs):
@@ -476,6 +477,15 @@ finally:
                 "drop_x",
                 "drop_y",
                 "drop_z",
+                "start_x",
+                "start_y",
+                "start_z",
+                "dist_start_to_cube",
+                "dist_start_to_drop",
+                "phase_approach_s",
+                "phase_grip_s",
+                "phase_carry_s",
+                "phase_place_s",
             ]
             trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
             with open(filename, "w", newline="") as f:
@@ -484,6 +494,8 @@ finally:
                 for r in results:
                     cp = trial_defs.get(r["trial"], {}).get("cube_pos", [None] * 3)
                     dp = trial_defs.get(r["trial"], {}).get("drop_pos", [None] * 3)
+                    sp = r.get("phase_splits", {})
+                    spos = r.get("start_pos") or [None, None, None]
                     writer.writerow(
                         {
                             "trial": r["trial"],
@@ -496,6 +508,31 @@ finally:
                             "drop_x": round(dp[0], 4) if dp[0] is not None else "",
                             "drop_y": round(dp[1], 4) if dp[1] is not None else "",
                             "drop_z": round(dp[2], 4) if dp[2] is not None else "",
+                            "start_x": (
+                                round(spos[0], 4) if spos[0] is not None else ""
+                            ),  # ← add
+                            "start_y": (
+                                round(spos[1], 4) if spos[1] is not None else ""
+                            ),  # ← add
+                            "start_z": (
+                                round(spos[2], 4) if spos[2] is not None else ""
+                            ),  # ← add
+                            "dist_start_to_cube": (
+                                round(r["dist_start_to_cube"], 4)
+                                if r.get("dist_start_to_cube") is not None
+                                else ""
+                            ),  # ← add
+                            "dist_start_to_drop": (
+                                round(r["dist_start_to_drop"], 4)
+                                if r.get("dist_start_to_drop") is not None
+                                else ""
+                            ),  # ← add
+                            "phase_approach_s": round(
+                                sp.get("approach", 0.0), 3
+                            ),  # ← add
+                            "phase_grip_s": round(sp.get("grip", 0.0), 3),  # ← add
+                            "phase_carry_s": round(sp.get("carry", 0.0), 3),  # ← add
+                            "phase_place_s": round(sp.get("place", 0.0), 3),  # ← add
                         }
                     )
         else:
