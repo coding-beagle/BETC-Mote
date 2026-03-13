@@ -1145,16 +1145,45 @@ class ObstacleConfig:
         obstacle's geometric radius multiplied by this factor.  Values < 1
         give a smaller "hit zone" than the visual sphere; > 1 a larger one.
         Default 1.0 (exact match).
+    min_reach : float
+        Nearest obstacle distance as a fraction of arm_length.  Default 0.3.
+    max_reach : float
+        Furthest obstacle distance as a fraction of arm_length.  Default 0.90.
+    min_elevation : float
+        Lower elevation bound in degrees (negative = below horizontal).
+        Default -20.0.
+    max_elevation : float
+        Upper elevation bound in degrees.  Default 70.0.
+    az_min : float
+        Minimum azimuth offset from az_centre in degrees.  Default -45.0.
+    az_max : float
+        Maximum azimuth offset from az_centre in degrees.  Default 45.0.
+    az_centre : float
+        Centre azimuth for the obstacle cloud in degrees.  Should match the
+        az_centre used for cube/drop positions.  Default -90.0.
+    shoulder_margin : float
+        Keep-clear radius around the shoulder origin.  No obstacle centre will
+        be placed within this distance of shoulder_pos, preventing immediate
+        collisions at the start of a trial.  Default 0.15 m.
     """
 
     n_obstacles: int = 10
     radius_min: float = 0.03
     radius_max: float = 0.08
     margin: float = 0.12
+    shoulder_margin: float = 0.15
     seed: Optional[int] = None
     penalty_on_hit: bool = False
     penalty_seconds: float = 2.0
     collision_radius_scale: float = 1.0
+    # Hemisphere sampling bounds – mirror the same options as from_random()
+    min_reach: float = 0.3
+    max_reach: float = 0.90
+    min_elevation: float = -20.0
+    max_elevation: float = 70.0
+    az_min: float = -45.0
+    az_max: float = 45.0
+    az_centre: float = -90.0
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1165,7 +1194,6 @@ class ObstacleConfig:
 class _ObstacleSphere:
     """Internal: one spherical obstacle in CoppeliaSim."""
 
-    # How long (seconds) the HUD flash lasts after a hit
     HIT_FLASH_DURATION = 0.35
 
     def __init__(self, sim, pos: List[float], radius: float, label: str):
@@ -1173,9 +1201,9 @@ class _ObstacleSphere:
         self.pos = list(pos)
         self.radius = radius
         self._handle: Optional[int] = None
-        self._hit_flash: float = 0.0  # countdown timer
-        self._hit_count: int = 0  # cumulative contacts this trial
-        self._contact_active: bool = False  # True while wrist is inside sphere
+        self._hit_flash: float = 0.0
+        self._hit_count: int = 0
+        self._contact_active: bool = False  # True while arm is overlapping sphere
 
         self._handle = sim.createPrimitiveShape(
             sim.primitiveshape_spheroid,
@@ -1188,7 +1216,8 @@ class _ObstacleSphere:
             )
         sim.setObjectPosition(self._handle, pos)
         sim.setObjectAlias(self._handle, label)
-        # Static + non-respondable so it can't physically push anything
+        # Static so physics doesn't move it; respondable flag does not affect
+        # checkCollision — geometry is always tested regardless.
         sim.setObjectInt32Param(self._handle, sim.shapeintparam_static, 1)
 
     def remove(self):
@@ -1199,33 +1228,36 @@ class _ObstacleSphere:
                 pass
             self._handle = None
 
-    def check_collision(
-        self,
-        wrist_pos: List[float],
-        collision_radius_scale: float = 1.0,
-        dt: float = 0.0,
-    ) -> bool:
+    def check_collision(self, arm_collection: int, dt: float = 0.0) -> bool:
         """
-        Returns True on the *leading edge* of a new collision event (wrist
-        enters the sphere).  Stays False while the wrist is already inside
-        (contact_active) and resets when it exits.
+        Uses sim.checkCollision to test whether any part of the arm (represented
+        by arm_collection — a CoppeliaSim collection covering all arm links)
+        intersects this obstacle sphere.
+
+        Returns True only on the *leading edge* of a contact (i.e. the first
+        frame the arm enters the sphere).  Stays False during sustained contact
+        and resets to False once the arm has fully cleared the sphere, so each
+        pass-through counts as exactly one hit.
 
         Also ticks down the HUD flash timer.
         """
         self._hit_flash = max(0.0, self._hit_flash - dt)
 
-        dist = math.sqrt(sum((wrist_pos[i] - self.pos[i]) ** 2 for i in range(3)))
-        effective_r = self.radius * collision_radius_scale
-        inside = dist <= effective_r
+        if self._handle is None:
+            return False
+
+        # checkCollision returns (result, collidingPairs)
+        # result is 1 if colliding, 0 if not.
+        result, _ = self.sim.checkCollision(self._handle, arm_collection)
+        in_contact = result == 1
 
         new_hit = False
-        if inside and not self._contact_active:
-            # Leading edge – count a new hit
+        if in_contact and not self._contact_active:
             self._contact_active = True
             self._hit_count += 1
             self._hit_flash = self.HIT_FLASH_DURATION
             new_hit = True
-        elif not inside:
+        elif not in_contact:
             self._contact_active = False
 
         return new_hit
@@ -1261,9 +1293,12 @@ class ObstacleTransportTrial(TransportTrial):
     ----------
     obstacle_cfg : ObstacleConfig
         Configuration dataclass controlling cloud density, size range, etc.
+    arm_collection : int
+        CoppeliaSim collection handle covering all arm links, used by
+        sim.checkCollision to test the full arm geometry against each obstacle.
+        Create once at startup with sim.createCollection and add the arm root.
     shoulder_pos : list[float]
-        World-space shoulder position used to sample obstacle positions from
-        the same hemisphere as cube/drop locations.
+        World-space shoulder position used to sample obstacle positions.
     arm_length : float
         Used with shoulder_pos to bound the sampling volume.
     """
@@ -1274,6 +1309,7 @@ class ObstacleTransportTrial(TransportTrial):
         cube_pos: List[float],
         drop_pos: List[float],
         obstacle_cfg: ObstacleConfig,
+        arm_collection: int,
         shoulder_pos: List[float],
         arm_length: float,
         pick_radius: float = 0.06,
@@ -1295,6 +1331,7 @@ class ObstacleTransportTrial(TransportTrial):
         )
 
         self._obstacle_cfg = obstacle_cfg
+        self._arm_collection = arm_collection
         self._shoulder_pos = list(shoulder_pos)
         self._arm_length = arm_length
 
@@ -1322,10 +1359,13 @@ class ObstacleTransportTrial(TransportTrial):
             shoulder=self._shoulder_pos,
             arm_length=self._arm_length,
             n=pool_size,
-            min_reach=0.3,
-            max_reach=0.90,
-            min_elevation=-20.0,
-            max_elevation=70.0,
+            min_reach=cfg.min_reach,
+            max_reach=cfg.max_reach,
+            min_elevation=cfg.min_elevation,
+            max_elevation=cfg.max_elevation,
+            az_min=cfg.az_min,
+            az_max=cfg.az_max,
+            az_centre=cfg.az_centre,
             seed=cfg.seed,
         )
         rng.shuffle(candidates)
@@ -1334,10 +1374,17 @@ class ObstacleTransportTrial(TransportTrial):
         for pos in candidates:
             if placed >= cfg.n_obstacles:
                 break
-            # Reject if too close to cube or drop zone
+            # Reject if too close to cube, drop zone, or shoulder origin
             d_cube = math.sqrt(sum((pos[i] - self.cube_pos[i]) ** 2 for i in range(3)))
             d_drop = math.sqrt(sum((pos[i] - self.drop_pos[i]) ** 2 for i in range(3)))
-            if d_cube < cfg.margin or d_drop < cfg.margin:
+            d_shoulder = math.sqrt(
+                sum((pos[i] - self._shoulder_pos[i]) ** 2 for i in range(3))
+            )
+            if (
+                d_cube < cfg.margin
+                or d_drop < cfg.margin
+                or d_shoulder < cfg.shoulder_margin
+            ):
                 continue
 
             radius = rng.uniform(cfg.radius_min, cfg.radius_max)
@@ -1378,8 +1425,7 @@ class ObstacleTransportTrial(TransportTrial):
             cfg = self._obstacle_cfg
             for obs in self._obstacles:
                 new_hit = obs.check_collision(
-                    wrist_pos,
-                    collision_radius_scale=cfg.collision_radius_scale,
+                    self._arm_collection,
                     dt=dt,
                 )
                 if new_hit:
@@ -1516,6 +1562,9 @@ class ObstacleTransportExperiment:
           ``pick_radius``, ``drop_radius``, ``timeout``, ``label``
     obstacle_cfg : ObstacleConfig
         Shared configuration; mutate between trials to change difficulty.
+    arm_collection : int
+        CoppeliaSim collection handle covering all arm links.  Create once
+        at startup and pass here — reused across all trials.
     start_pos : list[float] | None
         Default arm rest position for difficulty metrics.
     """
@@ -1525,11 +1574,13 @@ class ObstacleTransportExperiment:
         sim,
         trials: List[dict],
         obstacle_cfg: ObstacleConfig,
+        arm_collection: int,
         start_pos: Optional[List[float]] = None,
     ):
         self.sim = sim
         self._trial_defs = trials
         self.obstacle_cfg = obstacle_cfg  # public – callers may mutate
+        self._arm_collection = arm_collection
         self._default_start_pos = list(start_pos) if start_pos else None
         self._index = 0
         self._results: List[dict] = []
@@ -1547,6 +1598,7 @@ class ObstacleTransportExperiment:
         sim,
         shoulder_pos: List[float],
         arm_length: float,
+        arm_collection: int,
         n_trials: int = 5,
         obstacle_cfg: Optional[ObstacleConfig] = None,
         pick_radius: float = 0.06,
@@ -1568,6 +1620,8 @@ class ObstacleTransportExperiment:
 
         Parameters
         ----------
+        arm_collection : int
+            CoppeliaSim collection handle covering all arm links.
         obstacle_cfg : ObstacleConfig | None
             Obstacle cloud configuration.  If None, a default ObstacleConfig()
             is used (10 obstacles, 3–8 cm radius).
@@ -1610,7 +1664,13 @@ class ObstacleTransportExperiment:
                     "label": f"Obs-Transport {i+1}",
                 }
             )
-        return cls(sim, trials, obstacle_cfg=obstacle_cfg, start_pos=start_pos)
+        return cls(
+            sim,
+            trials,
+            obstacle_cfg=obstacle_cfg,
+            arm_collection=arm_collection,
+            start_pos=start_pos,
+        )
 
     # ── spawn ─────────────────────────────────────────────────────────────────
 
@@ -1636,6 +1696,7 @@ class ObstacleTransportExperiment:
             cube_pos=cfg["cube_pos"],
             drop_pos=cfg["drop_pos"],
             obstacle_cfg=cfg_snapshot,
+            arm_collection=self._arm_collection,
             shoulder_pos=cfg["shoulder_pos"],
             arm_length=cfg["arm_length"],
             pick_radius=cfg.get("pick_radius", 0.06),

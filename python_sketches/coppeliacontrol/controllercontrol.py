@@ -96,13 +96,21 @@ OBS_AZ_MAX = 90.0
 OBS_SEED = None  # set an int for reproducible positions + obstacle layout
 
 # ObstacleConfig fields – edit these to change the obstacle cloud:
-OBS_N_OBSTACLES = 30  # number of spherical obstacles
-OBS_RADIUS_MIN = 0.03  # smallest sphere radius (m)
-OBS_RADIUS_MAX = 0.08  # largest sphere radius (m)
+OBS_N_OBSTACLES = 10  # number of spherical obstacles
+OBS_RADIUS_MIN = 0.01  # smallest sphere radius (m)
+OBS_RADIUS_MAX = 0.03  # largest sphere radius (m)
 OBS_MARGIN = 0.12  # keep-clear radius around cube & drop zone (m)
+OBS_SHOULDER_MARGIN = 0.3  # keep-clear radius around shoulder origin (m)
 OBS_PENALTY_ON_HIT = False  # add time penalty to reported duration on each hit
 OBS_PENALTY_SECONDS = 2.0  # seconds added per obstacle contact event
-OBS_COLLISION_SCALE = 1.0  # hit-zone scale vs visual sphere radius
+# Obstacle cloud hemisphere bounds – same meaning as the OBS_* reach params above
+OBS_CLOUD_MIN_REACH = 0.3  # nearest obstacle (fraction of arm length)
+OBS_CLOUD_MAX_REACH = 0.90  # furthest obstacle (fraction of arm length)
+OBS_CLOUD_MIN_ELEVATION = -20.0  # degrees below horizontal
+OBS_CLOUD_MAX_ELEVATION = 70.0  # degrees above horizontal
+OBS_CLOUD_AZ_MIN = -45.0  # azimuth spread around OBS_CLOUD_AZ_CENTRE
+OBS_CLOUD_AZ_MAX = 45.0
+OBS_CLOUD_AZ_CENTRE = -90.0  # should match TRN_AZ_* centre for consistency
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -230,6 +238,14 @@ joint_handles = [
 N_JOINTS = len(joint_handles)
 print(f"Tracking {N_JOINTS} joints for kinematics logging.")
 
+# ── arm collision collection ───────────────────────────────────────────────────
+# A CoppeliaSim collection covering the entire right arm, used by
+# sim.checkCollision in ObstacleTransportTrial.  Adding the shoulder root with
+# the "include all descendants" option captures every link automatically.
+arm_collection = sim.createCollection(0)
+sim.addItemToCollection(arm_collection, sim.handle_tree, rightShoulderAbduct, 0)
+print(f"Arm collision collection created (handle={arm_collection}).")
+
 simIndex = 0
 simObject = 0
 
@@ -321,15 +337,23 @@ try:
             radius_min=OBS_RADIUS_MIN,
             radius_max=OBS_RADIUS_MAX,
             margin=OBS_MARGIN,
+            shoulder_margin=OBS_SHOULDER_MARGIN,
             seed=OBS_SEED,
             penalty_on_hit=OBS_PENALTY_ON_HIT,
             penalty_seconds=OBS_PENALTY_SECONDS,
-            collision_radius_scale=OBS_COLLISION_SCALE,
+            min_reach=OBS_CLOUD_MIN_REACH,
+            max_reach=OBS_CLOUD_MAX_REACH,
+            min_elevation=OBS_CLOUD_MIN_ELEVATION,
+            max_elevation=OBS_CLOUD_MAX_ELEVATION,
+            az_min=OBS_CLOUD_AZ_MIN,
+            az_max=OBS_CLOUD_AZ_MAX,
+            az_centre=OBS_CLOUD_AZ_CENTRE,
         )
         experiment = ObstacleTransportExperiment.from_random(
             sim,
             shoulder_pos=robot_shoulder_world,
             arm_length=ROBOT_ARM_LENGTH,
+            arm_collection=arm_collection,
             n_trials=OBS_N_TRIALS,
             obstacle_cfg=obs_cfg,
             pick_radius=OBS_PICK_RADIUS,
@@ -713,7 +737,7 @@ finally:
         print("No trial results to save.")
 
     # ── Save kinematics CSV ───────────────────────────────────────────────────
-    if kinematics_buffer:
+    if kinematics_buffer and results:
         kin_filename = f"{results_dir}/{exp_tag}_kinematics_{ts}.csv"
 
         kin_fieldnames = [
