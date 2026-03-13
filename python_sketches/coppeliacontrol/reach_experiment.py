@@ -1827,10 +1827,28 @@ def _draw_summary(
     surf.blit(title_surf, (W // 2 - title_surf.get_width() // 2, 60))
 
     n_ok = sum(1 for r in results if r["result"] == "success")
-    score = fonts["md"].render(
-        f"{n_ok} / {len(results)}  trials succeeded", True, C_TEXT_BRT
-    )
+
+    # Build the headline score line; append aggregate hits if relevant.
+    score_str = f"{n_ok} / {len(results)}  trials succeeded"
+    if extra_col == "total_hits":
+        total_hits = sum(r.get("total_hits", 0) for r in results)
+        hit_col = C_FAIL if total_hits > 0 else C_HOT
+        score_str += f"   |   {total_hits} total obstacle hits"
+    else:
+        hit_col = C_TEXT_BRT
+
+    score = fonts["md"].render(score_str, True, C_TEXT_BRT)
     surf.blit(score, (W // 2 - score.get_width() // 2, 100))
+
+    # If hits are non-zero, render the hit count again in a contrasting colour
+    # so it stands out from the white success count.
+    if extra_col == "total_hits" and total_hits > 0:
+        hits_surf = fonts["md"].render(
+            f"{total_hits} total obstacle hits", True, hit_col
+        )
+        # Overlay just the hits portion — find its x position within the line.
+        # Simpler: draw a second, shorter line just below the score.
+        surf.blit(hits_surf, (W // 2 - hits_surf.get_width() // 2, 122))
 
     for i, r in enumerate(results):
         col = C_SUCCESS if r["result"] == "success" else C_FAIL
@@ -1847,4 +1865,4 @@ def _draw_summary(
             f"{r['result']:8s}  {r['duration']:.2f}s  [{splits_str}]{extra}"
         )
         lbl = fonts["sm"].render(txt, True, col)
-        surf.blit(lbl, (W // 2 - lbl.get_width() // 2, 135 + i * 22))
+        surf.blit(lbl, (W // 2 - lbl.get_width() // 2, 148 + i * 22))

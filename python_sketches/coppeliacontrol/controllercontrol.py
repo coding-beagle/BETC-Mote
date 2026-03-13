@@ -54,7 +54,7 @@ BUTTON_LAYOUT = {
 # Set to "reach"     – standard reach-to-target experiment
 #        "transport" – pick-and-place cube transport
 #        "obstacle"  – pick-and-place with spherical obstacle cloud
-EXP_TYPE = "transport"  # "reach" | "transport" | "obstacle"
+EXP_TYPE = "obstacle"  # "reach" | "transport" | "obstacle"
 
 # ── reach experiment configuration ───────────────────────────────────────────
 EXP_N_TRIALS = 10
@@ -96,7 +96,7 @@ OBS_AZ_MAX = 90.0
 OBS_SEED = None  # set an int for reproducible positions + obstacle layout
 
 # ObstacleConfig fields – edit these to change the obstacle cloud:
-OBS_N_OBSTACLES = 10  # number of spherical obstacles
+OBS_N_OBSTACLES = 30  # number of spherical obstacles
 OBS_RADIUS_MIN = 0.03  # smallest sphere radius (m)
 OBS_RADIUS_MAX = 0.08  # largest sphere radius (m)
 OBS_MARGIN = 0.12  # keep-clear radius around cube & drop zone (m)
@@ -480,7 +480,10 @@ try:
 
         res, *_ = simIK.handleGroup(ikEnv, ikGroupUndamped, {"syncWorlds": True})
         if res != simIK.result_success:
-            simIK.handleGroup(ikEnv, ikGroupDamped, {"syncWorlds": True})
+            res, *_ = simIK.handleGroup(ikEnv, ikGroupDamped, {"syncWorlds": True})
+            ik_status = "damped" if res == simIK.result_success else "failed"
+        else:
+            ik_status = "ok"
 
         sim.step()
 
@@ -516,6 +519,7 @@ try:
                 "trial": trial_idx,
                 "phase": phase,
                 "gripper_open": int(gripper_open),
+                "ik_status": ik_status,
                 "wrist_x": round(wrist_pos[0], 5),
                 "wrist_y": round(wrist_pos[1], 5),
                 "wrist_z": round(wrist_pos[2], 5),
@@ -717,6 +721,7 @@ finally:
             "trial",
             "phase",
             "gripper_open",
+            "ik_status",
             "wrist_x",
             "wrist_y",
             "wrist_z",
