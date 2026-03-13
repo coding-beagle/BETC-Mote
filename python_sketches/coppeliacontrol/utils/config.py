@@ -80,7 +80,7 @@ OBS_AZ_MAX = 90.0
 OBS_SEED = None
 
 # ObstacleConfig fields – edit these to change the obstacle cloud:
-OBS_N_OBSTACLES = 5  # number of spherical obstacles
+OBS_N_OBSTACLES = 10  # number of spherical obstacles
 OBS_RADIUS_MIN = 0.01  # smallest sphere radius (m)
 OBS_RADIUS_MAX = 0.03  # largest sphere radius (m)
 OBS_MARGIN = 0.12  # keep-clear radius around cube & drop zone (m)
