@@ -13,8 +13,8 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-from config import FINGER_CURL_THRESHOLD, FINGER_CLOSED_COUNT, GRIPPER_DEBOUNCE_FRAMES
-from hand_gesture import compute_finger_curls
+from .config import FINGER_CURL_THRESHOLD, FINGER_CLOSED_COUNT, GRIPPER_DEBOUNCE_FRAMES
+from .hand_gesture import compute_finger_curls
 
 
 class CameraThread(threading.Thread):

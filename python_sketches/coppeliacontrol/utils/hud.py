@@ -9,7 +9,7 @@ All OpenCV overlay / HUD drawing functions.
 
 import cv2
 
-from config import MODE_REACH, MODE_TRANSPORT
+from .config import MODE_REACH, MODE_TRANSPORT
 
 
 # ── colour helper ─────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ Tracks the user's maximum arm-reach over time and derives a scale factor
 that maps human reach to the robot's arm length.
 """
 
-from math_utils import vec_length, vec_sub
+from .math_utils import vec_length, vec_sub
 
 
 class ArmCalibrator:

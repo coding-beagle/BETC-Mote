@@ -6,10 +6,12 @@ Factory functions for creating experiments and saving results to CSV.
 
 import csv
 import datetime
+import sys, os
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from reach_experiment import Experiment, TransportExperiment
 
-from config import (
+from .config import (
     ROBOT_ARM_LENGTH,
     EXP_N_TRIALS,
     EXP_RADIUS,

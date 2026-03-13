@@ -6,7 +6,7 @@ Finger-curl detection and the per-finger curl-meter HUD widget.
 
 import cv2
 
-from config import FINGER_CURL_THRESHOLD, FINGER_CLOSED_COUNT
+from .config import FINGER_CURL_THRESHOLD, FINGER_CLOSED_COUNT
 
 # MediaPipe hand landmark indices
 _FINGER_NAMES = ["Index", "Middle", "Ring", "Pinky"]

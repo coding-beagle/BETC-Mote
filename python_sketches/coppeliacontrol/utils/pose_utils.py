@@ -10,7 +10,7 @@ from math import sqrt
 
 import numpy as np
 
-from math_utils import (
+from .math_utils import (
     vec_add,
     vec_length,
     vec_normalize,
