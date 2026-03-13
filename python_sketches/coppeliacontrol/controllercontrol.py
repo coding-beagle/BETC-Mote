@@ -108,8 +108,8 @@ OBS_CLOUD_MIN_REACH = 0.3  # nearest obstacle (fraction of arm length)
 OBS_CLOUD_MAX_REACH = 0.90  # furthest obstacle (fraction of arm length)
 OBS_CLOUD_MIN_ELEVATION = -20.0  # degrees below horizontal
 OBS_CLOUD_MAX_ELEVATION = 70.0  # degrees above horizontal
-OBS_CLOUD_AZ_MIN = -45.0  # azimuth spread around OBS_CLOUD_AZ_CENTRE
-OBS_CLOUD_AZ_MAX = 45.0
+OBS_CLOUD_AZ_MIN = 20.0  # azimuth spread around OBS_CLOUD_AZ_CENTRE
+OBS_CLOUD_AZ_MAX = 90.0
 OBS_CLOUD_AZ_CENTRE = -90.0  # should match TRN_AZ_* centre for consistency
 
 

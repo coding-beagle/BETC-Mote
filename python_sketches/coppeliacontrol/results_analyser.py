@@ -2,7 +2,7 @@
 Robot Arm Experiment Analyser
 ──────────────────────────────
 Run this script and use the file picker to select one or more CSV files (Group A).
-Handles both Reach experiment CSVs and Transport experiment CSVs automatically.
+Handles Reach, Transport, and Obstacle Transport experiment CSVs automatically.
 
 Reach CSV columns (required):  result, duration_s, target_x, target_y, target_z
 Transport CSV columns:          result, duration_s,
@@ -11,6 +11,9 @@ Transport CSV columns:          result, duration_s,
                                 dist_start_to_cube, dist_start_to_drop (optional),
                                 phase_approach_s, phase_grip_s,
                                 phase_carry_s, phase_place_s (optional)
+Obstacle CSV columns:           all transport columns, plus:
+                                total_hits, n_obstacles,
+                                penalty_accumulated_s, adjusted_duration_s
 
 Figure 1 — Overview:
   • Left:  Overlaid normal distribution curves of successful run durations
@@ -24,10 +27,16 @@ Figure 2 — Comparison (shown when Group B is loaded):
   • Duration KDE overlay, box-plots, speed box-plot — all annotated with ANOVA
   • Group mean speed per move with ±1 SD band
 
-Figure 3 — Transport Phase Analysis (press P, transport CSVs only):
+Figure 3 — Transport Phase Analysis (press P, transport/obstacle CSVs only):
   • Stacked bar charts of mean time per phase per experiment
   • Box-plots comparing phase time distributions across groups
   • Scatter: dist_start_to_cube vs duration (task difficulty proxy)
+
+Figure 4 — Collision Analysis (press C, obstacle CSVs only):
+  • Bar chart: mean hits per trial per experiment, with ±1 SD error bars
+  • Box-plot: per-trial hit count distributions, both groups side-by-side
+  • Scatter: n_obstacles vs mean hits per trial (difficulty scaling)
+  • Summary table: mean ± SD hits, hit rate (hits/obstacle), % zero-hit trials
 """
 
 import sys
@@ -52,7 +61,6 @@ matplotlib.rcParams["keymap.forward"] = []
 PALETTE_A = ["#4C72B0", "#55A868", "#64B5CD", "#3A9E7A", "#2E6FA3", "#76B7B2"]
 PALETTE_B = ["#DD8452", "#C44E52", "#E6A817", "#D45F86", "#C7622E", "#E8734A"]
 
-# Phase colours (consistent across all transport plots)
 PHASE_COLOURS = {
     "approach": "#4C72B0",
     "grip": "#55A868",
@@ -73,7 +81,9 @@ _comparison_fig = None
 
 
 def detect_csv_type(df: pd.DataFrame) -> str:
-    """Return 'transport' or 'reach' based on column presence."""
+    """Return 'obstacle', 'transport', or 'reach' based on column presence."""
+    if "total_hits" in df.columns:
+        return "obstacle"
     if "cube_x" in df.columns:
         return "transport"
     return "reach"
@@ -161,18 +171,13 @@ def load_csv(path: Path):
 
 
 def compute_speeds(df: pd.DataFrame, csv_type: str) -> np.ndarray:
-    """
-    Reach:     speed = displacement between consecutive target positions / duration
-    Transport: speed = straight-line cube→drop distance / trial duration
-               (each trial is one move, so this gives m/s for the task)
-    """
     if csv_type == "reach":
         pos = df[["target_x", "target_y", "target_z"]].values
         displacements = np.linalg.norm(np.diff(pos, axis=0), axis=1)
         durations = df["duration_s"].values[1:]
         return displacements / durations
     else:
-        # cube→drop straight-line distance per trial
+        # obstacle and transport both have cube/drop positions
         cube = df[["cube_x", "cube_y", "cube_z"]].values
         drop = df[["drop_x", "drop_y", "drop_z"]].values
         distances = np.linalg.norm(drop - cube, axis=1)
@@ -197,15 +202,13 @@ def _build_entry(
     else:
         speeds = compute_speeds(df, csv_type)
 
-    # Phase splits — only for transport with phase columns
     phase_splits = {}
-    if csv_type == "transport" and _has_phase_cols(df):
+    if csv_type in ("transport", "obstacle") and _has_phase_cols(df):
         for ph in PHASE_ORDER:
             col = f"phase_{ph}_s"
             if col in df.columns:
                 phase_splits[ph] = df[col].values
 
-    # Difficulty metrics
     dist_start_to_cube = (
         df["dist_start_to_cube"].values if _has_start_cols(df) else np.array([])
     )
@@ -213,6 +216,14 @@ def _build_entry(
         df["dist_start_to_drop"].values
         if "dist_start_to_drop" in df.columns
         else np.array([])
+    )
+
+    # ── Obstacle-specific columns ─────────────────────────────────────────────
+    hits_per_trial = (
+        df["total_hits"].values if "total_hits" in df.columns else np.array([])
+    )
+    n_obstacles_arr = (
+        df["n_obstacles"].values if "n_obstacles" in df.columns else np.array([])
     )
 
     return dict(
@@ -224,9 +235,11 @@ def _build_entry(
         n_success=len(df),
         n_total=total_rows,
         csv_type=csv_type,
-        phase_splits=phase_splits,  # dict: phase -> np.ndarray of per-trial times
+        phase_splits=phase_splits,
         dist_start_to_cube=dist_start_to_cube,
         dist_start_to_drop=dist_start_to_drop,
+        hits_per_trial=hits_per_trial,
+        n_obstacles_arr=n_obstacles_arr,
     )
 
 
@@ -241,10 +254,9 @@ def _pool_group(group_key: str):
 
 
 def _pool_phase_splits(group_key: str) -> dict:
-    """Pool per-trial phase times across all transport entries in a group."""
     result = {ph: [] for ph in PHASE_ORDER}
     for e in groups[group_key]:
-        if e["csv_type"] != "transport":
+        if e["csv_type"] not in ("transport", "obstacle"):
             continue
         for ph in PHASE_ORDER:
             arr = e["phase_splits"].get(ph, np.array([]))
@@ -282,9 +294,12 @@ def _ingest_paths(paths: list, group_key: str):
         groups[group_key].append(entry)
         existing.add(unique)
         type_tag = f"[{csv_type}]"
+        extra = ""
+        if csv_type == "obstacle" and len(entry["hits_per_trial"]) > 0:
+            extra = f"  avg hits={entry['hits_per_trial'].mean():.2f}"
         print(
             f"  ✓ Group {group_key}: {unique}  {type_tag}  "
-            f"(n={len(entry['durations'])}  μ={entry['durations'].mean():.3f}s)"
+            f"(n={len(entry['durations'])}  μ={entry['durations'].mean():.3f}s{extra})"
         )
 
 
@@ -413,7 +428,6 @@ def build_overview_figure():
         a.set_facecolor(BG)
 
     def _active(arr, csv_type="reach"):
-        # skip_first_move only meaningful for reach (sequential targets)
         if state["skip_first_move"] and csv_type == "reach" and len(arr) > 1:
             return arr[1:]
         return arr
@@ -452,11 +466,10 @@ def build_overview_figure():
                     )
             subtitle = "Per Experiment"
 
-        # Right-axis label differs by dataset type
         all_types = {e["csv_type"] for g in groups.values() for e in g}
-        if "transport" in all_types and "reach" not in all_types:
+        if all_types <= {"transport", "obstacle"} and "reach" not in all_types:
             spd_label = "Task Speed (cube→drop dist / duration, m/s)"
-        elif "reach" in all_types and "transport" not in all_types:
+        elif "reach" in all_types and len(all_types) == 1:
             spd_label = "Speed (units / s)"
         else:
             spd_label = "Speed (units / s  or  m/s)"
@@ -476,6 +489,24 @@ def build_overview_figure():
         group_str = f"{ta}: {n_a} exp." + (
             f"  |  {tb}: {n_b} exp." if n_b else "  (add Group B to compare)"
         )
+
+        # Append collision summary to suptitle if any obstacle data present
+        obs_entries = [
+            e for g in groups.values() for e in g if e["csv_type"] == "obstacle"
+        ]
+        if obs_entries:
+            all_hits = np.concatenate(
+                [
+                    e["hits_per_trial"]
+                    for e in obs_entries
+                    if len(e["hits_per_trial"]) > 0
+                ]
+            )
+            if len(all_hits):
+                group_str += (
+                    f"  |  collisions: μ={all_hits.mean():.2f} / trial  (press C)"
+                )
+
         fig.suptitle(
             f"Robot Arm Experiments — {subtitle}{tag_str}\n{group_str}",
             fontsize=13,
@@ -574,6 +605,7 @@ def build_overview_figure():
 
     _metrics_state = {"fig": None}
     _phase_state = {"fig": None}
+    _collision_state = {"fig": None}
 
     def _toggle_metrics(event=None):
         existing = _metrics_state["fig"]
@@ -593,17 +625,41 @@ def build_overview_figure():
             _phase_state["fig"] = None
         else:
             transport_entries = [
-                e for g in groups.values() for e in g if e["csv_type"] == "transport"
+                e
+                for g in groups.values()
+                for e in g
+                if e["csv_type"] in ("transport", "obstacle")
             ]
             if not transport_entries:
                 messagebox.showinfo(
-                    "No transport data", "Load at least one transport CSV first."
+                    "No transport data",
+                    "Load at least one transport or obstacle CSV first.",
                 )
                 return
             pfig = build_phase_figure()
             _phase_state["fig"] = pfig
             pfig.canvas.manager.show()
             pfig.canvas.draw_idle()
+
+    def _toggle_collision(event=None):
+        existing = _collision_state["fig"]
+        if existing is not None and plt.fignum_exists(existing.number):
+            plt.close(existing)
+            _collision_state["fig"] = None
+        else:
+            obs_entries = [
+                e for g in groups.values() for e in g if e["csv_type"] == "obstacle"
+            ]
+            if not obs_entries:
+                messagebox.showinfo(
+                    "No obstacle data",
+                    "Load at least one obstacle transport CSV first.",
+                )
+                return
+            cfig = build_collision_figure()
+            _collision_state["fig"] = cfig
+            cfig.canvas.manager.show()
+            cfig.canvas.draw_idle()
 
     def _on_key(event):
         if event.key == "h":
@@ -612,6 +668,8 @@ def build_overview_figure():
             _toggle_metrics()
         elif event.key == "p":
             _toggle_phase()
+        elif event.key == "c":
+            _toggle_collision()
 
     fig.canvas.mpl_connect("key_press_event", _on_key)
     redraw()
@@ -635,7 +693,6 @@ def build_comparison_figure():
     fig.suptitle(f"{ta} vs {tb} — Pooled Comparison", fontsize=15, fontweight="bold")
     gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.65, wspace=0.35)
 
-    # Row 0: Duration KDE overlay
     ax_kde = fig.add_subplot(gs[0, :])
     ax_kde.set_facecolor(BG)
     for durs, col, lbl in [(dur_a, col_a, label_a), (dur_b, col_b, label_b)]:
@@ -663,7 +720,6 @@ def build_comparison_figure():
     ax_kde.grid(axis="y", linestyle="--", alpha=0.4)
     ax_kde.spines[["top", "right"]].set_visible(False)
 
-    # Row 1a: Duration box-plot
     ax_db = fig.add_subplot(gs[1, 0])
     ax_db.set_facecolor(BG)
     if len(dur_a) and len(dur_b):
@@ -691,7 +747,6 @@ def build_comparison_figure():
     ax_db.grid(axis="y", linestyle="--", alpha=0.4)
     ax_db.spines[["top", "right"]].set_visible(False)
 
-    # Row 1b: Speed box-plot
     ax_sb = fig.add_subplot(gs[1, 1])
     ax_sb.set_facecolor(BG)
     if len(spd_a) > 0 and len(spd_b) > 0:
@@ -719,7 +774,6 @@ def build_comparison_figure():
     ax_sb.grid(axis="y", linestyle="--", alpha=0.4)
     ax_sb.spines[["top", "right"]].set_visible(False)
 
-    # Row 2: Group mean speed per move / trial with ±1 SD band
     ax_sl = fig.add_subplot(gs[2, :])
     ax_sl.set_facecolor(BG)
     for gk, col, lbl in [("A", col_a, ta), ("B", col_b, tb)]:
@@ -801,11 +855,10 @@ def build_metrics_figure():
         failure = total - success
         rate = success / total * 100 if total else 0
 
-        wedge_colors = [col, "#D9D9D9"]
         _, _, autotexts = ax.pie(
             [success, failure],
             labels=["Success", "Failure"],
-            colors=wedge_colors,
+            colors=[col, "#D9D9D9"],
             autopct="%1.1f%%",
             startangle=90,
             wedgeprops=dict(edgecolor="white", linewidth=2),
@@ -824,26 +877,17 @@ def build_metrics_figure():
     return fig
 
 
-# ── Phase analysis figure (transport only, press P) ───────────────────────────
+# ── Phase analysis figure ─────────────────────────────────────────────────────
 
 
 def build_phase_figure():
-    """
-    Two-row transport phase analysis:
-
-    Row 0: Pie charts — one per loaded group (A, and B if present).
-           Each pie is sized proportional to sqrt(avg trial duration) so
-           area ∝ time.  Slices show mean seconds and % per phase.
-    Row 1 left:  Box-plots of per-trial phase times, both groups overlaid.
-    Row 1 right: Scatter — dist_start_to_cube vs trial duration with
-                 linear regression lines (requires start_pos columns).
-    """
     ta, tb = group_titles["A"], group_titles["B"]
 
-    # ── Gather per-group pie data ─────────────────────────────────────────────
-    pie_specs = []  # list of (group_key, title, {ph: mean_s}, total_s)
+    pie_specs = []
     for gk, label in [("A", ta), ("B", tb)]:
-        t_entries = [e for e in groups[gk] if e["csv_type"] == "transport"]
+        t_entries = [
+            e for e in groups[gk] if e["csv_type"] in ("transport", "obstacle")
+        ]
         if not t_entries:
             continue
         splits = _pool_phase_splits(gk)
@@ -854,24 +898,20 @@ def build_phase_figure():
         if total > 0:
             pie_specs.append((gk, label, means, total))
 
-    n_pies = len(pie_specs)  # 1 or 2
+    n_pies = len(pie_specs)
 
-    # ── Collect transport entries for the bottom row ──────────────────────────
     all_transport = []
     for gk in ("A", "B"):
         for e in groups[gk]:
-            if e["csv_type"] == "transport":
+            if e["csv_type"] in ("transport", "obstacle"):
                 all_transport.append((gk, e))
 
-    # ── Figure ────────────────────────────────────────────────────────────────
     fig = plt.figure(figsize=(14, 12), num="Phase Analysis")
     fig.suptitle("Transport Phase Analysis", fontsize=14, fontweight="bold")
     fig.patch.set_facecolor(BG)
 
-    # Bottom two panels occupy the lower 42% of the figure
-    BOTTOM_TOP = 0.42  # top edge of bottom row (in figure coords)
-    BOTTOM_H = 0.30  # height of each bottom panel
-    BOTTOM_PAD = 0.06  # left/right padding
+    BOTTOM_H = 0.30
+    BOTTOM_PAD = 0.06
 
     ax_box = fig.add_axes([BOTTOM_PAD, 0.07, 0.40, BOTTOM_H])
     ax_scatter = fig.add_axes([BOTTOM_PAD + 0.50, 0.07, 0.40, BOTTOM_H])
@@ -891,30 +931,20 @@ def build_phase_figure():
         )
         return fig
 
-    # ── Scaled pie sizing (figure coordinates) ────────────────────────────────
-    # Max pie gets a square axes of side MAX_S (figure fraction).
-    # Others are scaled by sqrt(total / max_total) so area ∝ duration.
     max_total = max(spec[3] for spec in pie_specs)
-    MAX_S = 0.38  # side length of the largest pie axes (figure fraction)
-    MIN_S = 0.20  # floor so small pies are still readable
+    MAX_S, MIN_S = 0.38, 0.20
+    PIE_ROW_CY = 0.68
 
-    PIE_ROW_CY = 0.74  # vertical centre of pie row in figure coords
-
-    # Horizontal centres: evenly spaced across [0.15, 0.85]
-    if n_pies == 1:
-        centres_x = [0.50]
-    else:
-        centres_x = [0.25, 0.75]
-
+    centres_x = [0.50] if n_pies == 1 else [0.25, 0.75]
     pie_colours = [PHASE_COLOURS[ph] for ph in PHASE_ORDER]
     pie_explode = [0.03] * len(PHASE_ORDER)
+
+    COLLISION_COLOUR = "#E05C5C"
 
     for pie_idx, (gk, pie_title, means, total) in enumerate(pie_specs):
         side = MIN_S + (MAX_S - MIN_S) * np.sqrt(total / max_total)
         cx = centres_x[pie_idx]
-        cy = PIE_ROW_CY
-        # [left, bottom, width, height] in figure fraction
-        rect = [cx - side / 2, cy - side / 2, side, side]
+        rect = [cx - side / 2, PIE_ROW_CY - side / 2, side, side]
         ax_pie = fig.add_axes(rect, aspect="equal")
         ax_pie.set_facecolor(BG)
 
@@ -924,31 +954,80 @@ def build_phase_figure():
             for ph in PHASE_ORDER
         ]
 
-        wedges, _ = ax_pie.pie(
-            values,
-            labels=slice_labels,
-            colors=pie_colours,
-            explode=pie_explode,
-            startangle=90,
-            wedgeprops=dict(edgecolor="white", linewidth=1.6),
-            textprops=dict(fontsize=8.5),
-            labeldistance=1.22,
-        )
-        for w in wedges:
-            w.set_alpha(0.88)
+        # Check if this group has obstacle (collision) data
+        obs_entries_gk = [
+            e
+            for e in groups[gk]
+            if e["csv_type"] == "obstacle" and len(e["hits_per_trial"]) > 0
+        ]
+        has_collisions = bool(obs_entries_gk)
 
-        ax_pie.set_title(
-            f"{pie_title}\navg trial  {total:.2f}s",
-            fontsize=10,
-            fontweight="bold",
-            pad=8,
-        )
+        if has_collisions:
+            # Plain phase pie (unchanged from non-obstacle version)
+            wedges, _ = ax_pie.pie(
+                values,
+                labels=slice_labels,
+                colors=pie_colours,
+                explode=pie_explode,
+                startangle=90,
+                wedgeprops=dict(edgecolor="white", linewidth=1.6),
+                textprops=dict(fontsize=8.5),
+                labeldistance=1.22,
+            )
+            for w in wedges:
+                w.set_alpha(0.88)
+            ax_pie.set_title(
+                f"{pie_title}\navg trial  {total:.2f}s",
+                fontsize=10,
+                fontweight="bold",
+                pad=24,
+            )
 
-    # Note when sizes differ
+            # Avg collisions label below the pie
+            all_hits = np.concatenate([e["hits_per_trial"] for e in obs_entries_gk])
+            mean_hits = all_hits.mean()
+            ax_pie.text(
+                0,
+                -1.45,
+                f"Avg collisions / trial:  {mean_hits:.2f}",
+                ha="center",
+                va="top",
+                fontsize=9,
+                color=COLLISION_COLOUR,
+                fontweight="bold",
+                transform=ax_pie.transData,
+                bbox=dict(
+                    boxstyle="round,pad=0.35",
+                    fc="white",
+                    ec=COLLISION_COLOUR,
+                    alpha=0.85,
+                ),
+            )
+        else:
+            # No collision data — plain phase pie as before
+            wedges, _ = ax_pie.pie(
+                values,
+                labels=slice_labels,
+                colors=pie_colours,
+                explode=pie_explode,
+                startangle=90,
+                wedgeprops=dict(edgecolor="white", linewidth=1.6),
+                textprops=dict(fontsize=8.5),
+                labeldistance=1.22,
+            )
+            for w in wedges:
+                w.set_alpha(0.88)
+            ax_pie.set_title(
+                f"{pie_title}\navg trial  {total:.2f}s",
+                fontsize=10,
+                fontweight="bold",
+                pad=24,
+            )
+
     if n_pies == 2:
         fig.text(
             0.5,
-            BOTTOM_TOP + 0.01,
+            0.43,
             "Pie area ∝ average total trial duration",
             ha="center",
             fontsize=9,
@@ -956,7 +1035,6 @@ def build_phase_figure():
             style="italic",
         )
 
-    # ── Box-plots of per-trial phase times by group ───────────────────────────
     has_b_transport = any(gk == "B" for gk, _ in all_transport)
     group_keys_present = ["A"] + (["B"] if has_b_transport else [])
     group_cols = {"A": PALETTE_A[0], "B": PALETTE_B[0]}
@@ -1006,9 +1084,7 @@ def build_phase_figure():
         fontsize=9,
     )
 
-    # ── Scatter: dist_start_to_cube vs duration ───────────────────────────────
     has_dist_data = any(len(e["dist_start_to_cube"]) > 0 for _, e in all_transport)
-
     if has_dist_data:
         for gk, col, lbl in [("A", PALETTE_A[0], ta), ("B", PALETTE_B[0], tb)]:
             entries_t = [e for g, e in all_transport if g == gk]
@@ -1059,8 +1135,7 @@ def build_phase_figure():
         ax_scatter.text(
             0.5,
             0.5,
-            "No start-position data available.\n"
-            "(requires start_x/y/z columns in CSV)",
+            "No start-position data available.\n(requires start_x/y/z columns in CSV)",
             ha="center",
             va="center",
             transform=ax_scatter.transAxes,
@@ -1074,6 +1149,342 @@ def build_phase_figure():
     return fig
 
 
+# ── Collision analysis figure (obstacle CSVs, press C) ────────────────────────
+
+
+def build_collision_figure():
+    """
+    Four-panel collision analysis for obstacle transport experiments.
+
+    Top-left:  Bar chart — mean hits per trial per experiment, ±1 SD error bars.
+               Both groups plotted side-by-side with group colour coding.
+    Top-right: Box-plot — per-trial hit count distribution per experiment,
+               grouped by A / B.
+    Bottom-left:  Scatter — n_obstacles vs mean hits per trial, one point per
+                  experiment.  Useful for comparing difficulty across configs.
+    Bottom-right: Summary stats table — mean ± SD, hit rate (hits/obstacle),
+                  % zero-hit trials, total trials.
+    """
+    ta, tb = group_titles["A"], group_titles["B"]
+
+    # Collect obstacle entries per group
+    obs = {
+        "A": [e for e in groups["A"] if e["csv_type"] == "obstacle"],
+        "B": [e for e in groups["B"] if e["csv_type"] == "obstacle"],
+    }
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 11), num="Collision Analysis")
+    fig.suptitle(
+        "Collision Analysis — Obstacle Transport", fontsize=14, fontweight="bold"
+    )
+    fig.patch.set_facecolor(BG)
+    fig.subplots_adjust(
+        hspace=0.45, wspace=0.35, left=0.07, right=0.97, top=0.91, bottom=0.08
+    )
+
+    ax_bar, ax_box, ax_scatter, ax_table = (
+        axes[0, 0],
+        axes[0, 1],
+        axes[1, 0],
+        axes[1, 1],
+    )
+    for ax in (ax_bar, ax_box, ax_scatter):
+        ax.set_facecolor(BG)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.grid(axis="y", linestyle="--", alpha=0.4)
+    ax_table.set_facecolor(BG)
+    ax_table.axis("off")
+
+    group_cols = {"A": PALETTE_A[0], "B": PALETTE_B[0]}
+
+    # ── collect all entries in display order ──────────────────────────────────
+    all_entries = []  # list of (group_key, entry)
+    for gk in ("A", "B"):
+        for e in obs[gk]:
+            all_entries.append((gk, e))
+
+    if not all_entries:
+        for ax in (ax_bar, ax_box, ax_scatter):
+            ax.text(
+                0.5,
+                0.5,
+                "No obstacle data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=12,
+                color="#888888",
+            )
+        return fig
+
+    # ── Top-left: bar chart of mean hits per trial ────────────────────────────
+    bar_x = np.arange(len(all_entries))
+    bar_means = [
+        e["hits_per_trial"].mean() if len(e["hits_per_trial"]) else 0
+        for _, e in all_entries
+    ]
+    bar_sds = [
+        e["hits_per_trial"].std() if len(e["hits_per_trial"]) > 1 else 0
+        for _, e in all_entries
+    ]
+    bar_cols = [group_cols[gk] for gk, _ in all_entries]
+    bar_labels = [e["name"] for _, e in all_entries]
+
+    bars = ax_bar.bar(
+        bar_x,
+        bar_means,
+        color=bar_cols,
+        alpha=0.72,
+        edgecolor="white",
+        linewidth=0.8,
+        zorder=2,
+    )
+    ax_bar.errorbar(
+        bar_x,
+        bar_means,
+        yerr=bar_sds,
+        fmt="none",
+        color="#333333",
+        capsize=5,
+        capthick=1.4,
+        linewidth=1.4,
+        zorder=3,
+    )
+
+    # Annotate each bar with its mean value
+    for xi, (mean, sd) in enumerate(zip(bar_means, bar_sds)):
+        ax_bar.text(
+            xi,
+            mean + sd + 0.05,
+            f"{mean:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=8.5,
+            color="#333333",
+        )
+
+    ax_bar.set_xticks(bar_x)
+    ax_bar.set_xticklabels(bar_labels, rotation=30, ha="right", fontsize=9)
+    ax_bar.set_ylabel("Mean Hits per Trial", fontsize=11)
+    ax_bar.set_title(
+        "Average Collisions per Trial  (±1 SD)", fontsize=12, fontweight="bold"
+    )
+
+    # Group legend
+    from matplotlib.patches import Patch
+
+    legend_handles = []
+    for gk in ("A", "B"):
+        if obs[gk]:
+            legend_handles.append(
+                Patch(facecolor=group_cols[gk], alpha=0.72, label=group_titles[gk])
+            )
+    if legend_handles:
+        ax_bar.legend(handles=legend_handles, fontsize=9)
+
+    # ── Top-right: box-plot of per-trial hit distributions ────────────────────
+    box_data = [
+        e["hits_per_trial"] if len(e["hits_per_trial"]) else np.array([0])
+        for _, e in all_entries
+    ]
+    box_positions = np.arange(len(all_entries))
+    box_cols_list = [group_cols[gk] for gk, _ in all_entries]
+
+    bp = ax_box.boxplot(
+        box_data,
+        positions=box_positions,
+        widths=0.55,
+        patch_artist=True,
+        medianprops=dict(color="black", linewidth=1.8),
+        whiskerprops=dict(linewidth=1.2),
+        capprops=dict(linewidth=1.2),
+        flierprops=dict(marker="o", markersize=4, alpha=0.5),
+    )
+    for patch, col in zip(bp["boxes"], box_cols_list):
+        patch.set_facecolor(col)
+        patch.set_alpha(0.65)
+
+    ax_box.set_xticks(box_positions)
+    ax_box.set_xticklabels(bar_labels, rotation=30, ha="right", fontsize=9)
+    ax_box.set_ylabel("Hits per Trial", fontsize=11)
+    ax_box.set_title(
+        "Hit Count Distribution per Experiment", fontsize=12, fontweight="bold"
+    )
+
+    # ── Bottom-left: scatter n_obstacles vs mean hits ─────────────────────────
+    scatter_plotted = False
+    for gk in ("A", "B"):
+        entries_g = obs[gk]
+        if not entries_g:
+            continue
+        xs, ys, labels_s = [], [], []
+        for e in entries_g:
+            if len(e["hits_per_trial"]) == 0 or len(e["n_obstacles_arr"]) == 0:
+                continue
+            n_obs = float(
+                e["n_obstacles_arr"].mean()
+            )  # typically constant per experiment
+            xs.append(n_obs)
+            ys.append(e["hits_per_trial"].mean())
+            labels_s.append(e["name"])
+
+        if not xs:
+            continue
+
+        ax_scatter.scatter(
+            xs,
+            ys,
+            color=group_cols[gk],
+            s=80,
+            alpha=0.82,
+            edgecolors="white",
+            linewidth=0.8,
+            label=group_titles[gk],
+            zorder=3,
+        )
+        for xi, yi, lbl in zip(xs, ys, labels_s):
+            ax_scatter.annotate(
+                lbl,
+                (xi, yi),
+                textcoords="offset points",
+                xytext=(6, 4),
+                fontsize=8,
+                color="#444444",
+            )
+        scatter_plotted = True
+
+    if scatter_plotted:
+        # Add a y=x reference line (1 hit per obstacle = 100% hit rate)
+        xlim = ax_scatter.get_xlim()
+        ref_x = np.linspace(0, max(xlim[1], 1), 100)
+        ax_scatter.plot(
+            ref_x,
+            ref_x,
+            color="#aaaaaa",
+            linewidth=1.2,
+            linestyle=":",
+            label="1 hit / obstacle",
+            zorder=1,
+        )
+        ax_scatter.set_xlim(left=0)
+        ax_scatter.set_ylim(bottom=0)
+        ax_scatter.legend(fontsize=9)
+    else:
+        ax_scatter.text(
+            0.5,
+            0.5,
+            "No n_obstacles data available",
+            ha="center",
+            va="center",
+            transform=ax_scatter.transAxes,
+            fontsize=10,
+            color="#888888",
+        )
+
+    ax_scatter.set_xlabel("Number of Obstacles", fontsize=11)
+    ax_scatter.set_ylabel("Mean Hits per Trial", fontsize=11)
+    ax_scatter.set_title("Obstacle Count vs Mean Hits", fontsize=12, fontweight="bold")
+
+    # ── Bottom-right: summary stats table ─────────────────────────────────────
+    col_headers = [
+        "Experiment",
+        "Group",
+        "Trials",
+        "Mean hits",
+        "SD hits",
+        "Hits / obs",
+        "% zero-hit",
+    ]
+    rows = []
+    for gk, e in all_entries:
+        hits = e["hits_per_trial"]
+        n_obs_arr = e["n_obstacles_arr"]
+        n = len(hits)
+        mean = hits.mean() if n > 0 else 0.0
+        sd = hits.std() if n > 1 else 0.0
+        n_obs_val = n_obs_arr.mean() if len(n_obs_arr) > 0 else np.nan
+        hit_rate = (
+            mean / n_obs_val if np.isfinite(n_obs_val) and n_obs_val > 0 else np.nan
+        )
+        pct_zero = (hits == 0).mean() * 100 if n > 0 else 0.0
+        rows.append(
+            [
+                e["name"],
+                group_titles[gk],
+                str(n),
+                f"{mean:.2f}",
+                f"{sd:.2f}",
+                f"{hit_rate:.3f}" if np.isfinite(hit_rate) else "—",
+                f"{pct_zero:.1f}%",
+            ]
+        )
+
+    # Pooled rows per group
+    for gk in ("A", "B"):
+        if not obs[gk]:
+            continue
+        all_hits = np.concatenate(
+            [e["hits_per_trial"] for e in obs[gk] if len(e["hits_per_trial"]) > 0]
+        )
+        all_nobs = np.concatenate(
+            [e["n_obstacles_arr"] for e in obs[gk] if len(e["n_obstacles_arr"]) > 0]
+        )
+        n = len(all_hits)
+        mean = all_hits.mean() if n > 0 else 0.0
+        sd = all_hits.std() if n > 1 else 0.0
+        n_obs_val = all_nobs.mean() if len(all_nobs) > 0 else np.nan
+        hit_rate = (
+            mean / n_obs_val if np.isfinite(n_obs_val) and n_obs_val > 0 else np.nan
+        )
+        pct_zero = (all_hits == 0).mean() * 100 if n > 0 else 0.0
+        rows.append(
+            [
+                f"── {group_titles[gk]} pooled ──",
+                group_titles[gk],
+                str(n),
+                f"{mean:.2f}",
+                f"{sd:.2f}",
+                f"{hit_rate:.3f}" if np.isfinite(hit_rate) else "—",
+                f"{pct_zero:.1f}%",
+            ]
+        )
+
+    table = ax_table.table(
+        cellText=rows,
+        colLabels=col_headers,
+        loc="center",
+        cellLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.0, 1.55)
+
+    # Style header row
+    for j in range(len(col_headers)):
+        table[0, j].set_facecolor("#DDEEFF")
+        table[0, j].set_text_props(fontweight="bold")
+
+    # Stripe body rows and colour pooled rows
+    for i, (gk, _) in enumerate(all_entries):
+        row_idx = i + 1
+        bg = "#F0F4FF" if gk == "A" else "#FFF4F0"
+        for j in range(len(col_headers)):
+            table[row_idx, j].set_facecolor(bg)
+
+    # Pooled rows get a slightly darker tint
+    n_data_rows = len(all_entries)
+    for pi, gk in enumerate(gk for gk in ("A", "B") if obs[gk]):
+        row_idx = n_data_rows + pi + 1
+        bg = "#D8E8FF" if gk == "A" else "#FFE8D8"
+        for j in range(len(col_headers)):
+            table[row_idx, j].set_facecolor(bg)
+            table[row_idx, j].set_text_props(fontweight="bold")
+
+    ax_table.set_title("Summary Statistics", fontsize=12, fontweight="bold", pad=12)
+
+    return fig
+
+
 def _print_anova():
     dur_a, spd_a = _pool_group("A")
     dur_b, spd_b = _pool_group("B")
@@ -1082,6 +1493,24 @@ def _print_anova():
         print("\n" + anova_summary([dur_a, dur_b], f"Duration ({ta} vs {tb})"))
     if len(spd_a) and len(spd_b):
         print(anova_summary([spd_a, spd_b], f"Speed ({ta} vs {tb})"))
+
+    # Collision ANOVA if both groups have obstacle data
+    hits_a = np.concatenate(
+        [
+            e["hits_per_trial"]
+            for e in groups["A"]
+            if e["csv_type"] == "obstacle" and len(e["hits_per_trial"])
+        ]
+    )
+    hits_b = np.concatenate(
+        [
+            e["hits_per_trial"]
+            for e in groups["B"]
+            if e["csv_type"] == "obstacle" and len(e["hits_per_trial"])
+        ]
+    )
+    if len(hits_a) and len(hits_b):
+        print(anova_summary([hits_a, hits_b], f"Hits per Trial ({ta} vs {tb})"))
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -1108,11 +1537,11 @@ def main():
     if not groups["A"]:
         sys.exit(1)
 
-    # Print keybinds reminder
     print("\nKeybinds (click plot first):")
     print("  H — toggle button bar")
     print("  M — toggle success-rate figure")
-    print("  P — toggle phase analysis figure  (transport CSVs only)")
+    print("  P — toggle phase analysis figure  (transport/obstacle CSVs only)")
+    print("  C — toggle collision analysis figure  (obstacle CSVs only)")
 
     build_overview_figure()
     plt.show()
