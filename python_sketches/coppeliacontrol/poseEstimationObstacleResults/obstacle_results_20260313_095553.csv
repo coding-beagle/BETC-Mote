@@ -1,0 +1,3 @@
+trial,label,result,duration_s,cube_x,cube_y,cube_z,drop_x,drop_y,drop_z,start_x,start_y,start_z,dist_start_to_cube,dist_start_to_drop,phase_approach_s,phase_grip_s,phase_carry_s,phase_place_s,n_obstacles,total_hits,penalty_accumulated_s,adjusted_duration_s
+1,Obs-Transport 1,success,10.983,0.7073,-0.1465,0.9286,0.6717,-0.247,0.9513,0.6002,0.0663,0.6928,0.3353,0.4125,8.81,0.538,1.019,0.665,0,0,0.0,11.033
+2,Obs-Transport 2,success,3.471,0.7147,-0.1283,0.9048,0.6958,-0.1893,1.1689,0.7177,-0.2825,0.9566,0.1626,0.233,0.905,0.574,1.314,0.714,0,0,0.0,3.507

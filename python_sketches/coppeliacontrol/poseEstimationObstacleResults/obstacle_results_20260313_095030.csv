@@ -1,0 +1,2 @@
+trial,label,result,duration_s,cube_x,cube_y,cube_z,drop_x,drop_y,drop_z,start_x,start_y,start_z,dist_start_to_cube,dist_start_to_drop,phase_approach_s,phase_grip_s,phase_carry_s,phase_place_s,n_obstacles,total_hits,penalty_accumulated_s,adjusted_duration_s
+1,Obs-Transport 1,success,27.816,0.6048,-0.2047,1.2846,0.7061,-0.1516,0.9285,0.3365,-0.5374,0.8621,0.6009,0.5384,16.708,4.597,5.369,1.265,0,12,0.0,27.938
