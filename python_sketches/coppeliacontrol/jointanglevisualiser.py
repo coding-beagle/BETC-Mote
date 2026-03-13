@@ -56,11 +56,11 @@ JOINT_COLOURS = [
 
 IK_FAIL_COLOUR = "#ff2222"
 IK_DAMPED_COLOUR = "#ffaa22"
-BG_COLOUR = "#1a1a1e"
-PANEL_COLOUR = "#22222a"
-TEXT_COLOUR = "#cccccc"
+BG_COLOUR = "#ffffff"
+PANEL_COLOUR = "#cacaca"
+TEXT_COLOUR = "#000000"
 ACCENT_COLOUR = "#4e9af1"
-GRID_COLOUR = "#2a2a35"
+GRID_COLOUR = "#ffffff"
 FONT_FAMILY = "monospace"
 
 
@@ -123,7 +123,7 @@ class JointAngleViewer:
         self._ui_visible = True
 
         self.root.title("Joint Angle Viewer")
-        self.root.configure(bg=BG_COLOUR)
+        # self.root.configure(bg=BG_COLOUR)
         self.root.minsize(900, 520)
 
         self._build_layout()
@@ -572,8 +572,7 @@ class JointAngleViewer:
 
         n_shown = end - start + 1
         ax.set_title(
-            f"{os.path.basename(data['path'])}   ·   "
-            f"frames {start}–{end}  ({n_shown} frames)",
+            f"Joint Angles vs Time",
             color=TEXT_COLOUR,
             fontfamily=FONT_FAMILY,
             fontsize=10,

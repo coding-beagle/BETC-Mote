@@ -2752,7 +2752,7 @@ def aruco_marker_webcam(marker_size, output, camera, aruco_dict_name):
                         timestamp = datetime.now().isoformat()
                         csv_writer.writerow(
                             [
-                                timestamp,
+                                frame_count,
                                 marker_id[0],
                                 f"{distance:.4f}",
                                 f"{distance*100:.2f}",

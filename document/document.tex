@@ -259,8 +259,8 @@ Acknowledgments go here.
     These will be performed in the form of accuracy and latency experiments, which will give the freedom of being able to analyse more factors than the literature - including accuracy of measuring multiple joints angles simultaneously.
   
 %%%%%%%%%%%%%%%%%% METHODS %%%%%%%%%%%%%%%%%%
-\pagebreak
-\section{Methods} \label{sec:methods}
+% \pagebreak
+\section{Comparing two viable computer vision based methods of robot arm teleoperation} \label{sec:methods}
 \label{sec:methods}
 
   \subsection{Comparison of both computer vision methods}
@@ -390,39 +390,136 @@ Acknowledgments go here.
     Both 2D paper markers and 3D printed markers were used, though the glossy surface finish of either meant that tracking was unreliable at close distances and impossible at moderate distances.
     This was obtained from an experiment wherein a marker is held up to the camera and rotated around various axes, measuring the captured rotation.
     
-    Figure
+    \autoref{fig:arucomarkerresults} shows a plot of the measured roll angle, and shows the gaps in which no measurement was made.
+    Clearly this level of unreliability is unsuitable for the final tracking task, and therefore no further testing will be required.
 
     \begin{figure}[h!]
       \centering
-      \includegraphics[scale=0.8]{images/weezered.png}
+      \includegraphics[width=\linewidth]{images/measuredrollangle.png}
       \caption{Measured vs Expected graph of pitch of ArUco marker}
       \label{fig:arucomarkerresults}
     \end{figure}
 
+  \subsection{Final Tracking Method}
+
+  Results show that the pose estimation is roughly able to achieve the \(5 \degree\) measurements required for the project.
+  Moreover, the mediapipe model used to power this is optimised for real time measurement; using a \(30 \text{ fps}\) camera, each measurement takes \(33 \text{ ms}\), well below the required \(300 \text{ ms}\).
+  Hence, the comparison between conventional joystick control and human arm tracking teleoperation will use the pose estimation approach for comparison.
 
 %%%%%%%%%%%%%%%%%% RESULTS %%%%%%%%%%%%%%%%%%
-\pagebreak
-\section{Results and discussion} \label{sec:results}
+% \pagebreak
+\section{Experiments to characterise the difference in performance of arm tracking vs conventional control methods} \label{sec:results}
 \label{sec:experiments}
 
-  \subsection{Introduction}
-    \lipsum[1] % adds dummy text to fill up the example
+  \subsection{Description of experiment to compare conventional vs human arm tracking}
+    In order to compare fairly the two methods of control, three scenarios will be examined:
+
+    \begin{description}
+      \item[\autoref{sec:scen1}] - Position matching task similar to \citeauthor{ref:movementrange} \cite{ref:movementrange}. 
+      A random location within the envelope of the arm is selected and the operator must control the arm to this location as fast as possible.
+      \item[\autoref{sec:scen2}] - Pick and place task. 
+      An object and target location spawns within the envelope of the arm, and the operator must manipulate the object to the target.
+      \item[\autoref{sec:scen3}] - Obstacle laden pick and place task. 
+      Similar to pick and place task, but with tracking of obstacle collisions.
+    \end{description}
+
+    The operator must stand further away from the screen to be in frame of the camera for the pose estimation method.
+    To negate the perception advantages this would incur for the controller tasks, the controller method will be performed sitting this same distance away. 
+
+    Scenarios \(2\) and \(3\) consist of four different phases shown in \autoref{fig:pickandplacephases}
+    The object is considered 'held' as long as YuMi's grippers are within a certain distance threshold, and transition from an open state to a closed state.
+    This prevents the experiment from being limited by the design and simulation of a suitable end effector - though this may act as an interesting extension for future research.
+
+    To measure the performance of the position matching task, the distance covered is divided by the time taken to find the normalised speed measurement.
+    To measure the performance of the pick and place task, the cumulative time spent in each phase is measured, along with the overall time to complete the task.
+    Likewise, to ensure fairness between each method in both pick and place tasks, seeded randomness will be used to ensure that both methods get the same trial spawn position.
+
+    \begin{figure}[h!]
+    \centering
+    \begin{subfigure}{0.3\linewidth}
+        \includegraphics[width=\linewidth]{images/approach.png}
+        \label{fig:image1}
+    \end{subfigure}
+    \begin{subfigure}{0.3\linewidth}
+        \includegraphics[width=\linewidth]{images/grip.png}
+        \label{fig:image2}
+    \end{subfigure}
+
+    \begin{subfigure}{0.3\linewidth}
+        \includegraphics[width=\linewidth]{images/carry.png}
+        \label{fig:image3}
+    \end{subfigure}
+    \begin{subfigure}{0.3\linewidth}
+        \includegraphics[width=\linewidth]{images/place.png}
+        \label{fig:image4}
+    \end{subfigure}
+
+    \caption{Phases of the pick and place scenario}
+    \label{fig:pickandplacephases}
+  \end{figure}
   
-  \subsection{Content}
-    \subsubsection{Introduction}
-	\lipsum[1] % adds dummy text to fill up the example
-	
-	\subsubsection{Detail}
-        \lipsum[7-11] % adds dummy text to fill up the example
+  \subsection{Scenario 1: Random position matching task}
+  \label{sec:scen1}
+  \(100\) samples were taken, with \(10\) runs of \(10\) experiments. 
+  Analysis of variance (ANOVA) shows no significant deviation between each run (see appendix \textbf{TODO figure this out}).
+  The controller method was roughly \(42 \%\) faster than the pose estimation algorithm, although with a lower standard deviation of 0.043 compared to 0.053.
+  
+  The speed difference is likely attributable to the operator's familiarity of using controllers in video games, boasting over \(10\) years of meaningful experience in this field.
+  Notably, the difference in standard deviation could imply that pose estimation is stronger for tasks that require consistency, rather than outright speed.
+
+  \begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{images/reach_experiment_results.png}
+    \caption{Standard distribution plot of the results of either experiment}
+    \label{fig:experiment1res}
+  \end{figure}
     
-	\subsubsection{More detail}
-	\lipsum[1-3] % adds dummy text to fill up the example
-	
-	\subsubsection{Summary}
-	\lipsum[1] % adds dummy text to fill up the example
+	\subsection{Scenario 2: Simple environment pick and place task}
+  \label{sec:scen2}
+
+  The pose estimation algorithm shows \(60.3 \%\) reduction in time over the controller control in this task, with the noticeable difference being in the proportion of time spent in the 'approach' phase (see fig \ref{fig:experiment2res})
+  The controller method requires the operator to orient the gripper over the object, and doing this in certain arm positions can lead to singularities in the inverse kinematics solver, hence the longer time.
   
-  \subsection{Summary}
-    \lipsum[6] % adds dummy text to fill up the example
+  These singularities can be seen in a joint angle over time plot of one of the experiments in \autoref{fig:singularities}.
+  The advantage of the pose estimation method is that the human arm of the operator acts as a safety net for unreachable positions.
+
+  \begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{images/transport_results.png}
+    \caption{Standard distribution plot of the results of either experiment}
+    \label{fig:experiment2res}
+  \end{figure}
+
+
+  \begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{images/jointangletime.png}
+    \caption{Joint angle over time plot of the robot arm during a controller experiment }
+    \label{fig:singularities}
+  \end{figure}
+  
+        
+    
+	\subsection{Scenario 3: Obstacle-rich environment pick and place task}
+  \label{sec:scen3}
+
+  The pose estimation algorithm is quicker on average by \(57.2 \%\) in this task, likely for the same reasons as above - where the controller solution is running into singularities.
+  Additionally, the added dexterity shown led to \(3.46\) fewer collisions (\(4.14\) vs \(7.60\)) on average compared to the controller solution.
+
+  The fewer collisions may be due to more control that the operator has over the entire arm, as more data can be transmitted from the operator to the robot, in a way that is intuitive.
+  Likewise, the smooth control of the pose estimation algorithm may make it more predictable compared to the IK approach of the controller solution - where it may be jumping over singularity positions unpredictably.
+
+  The proportion of time spent in the approach phase increased by \(9 \%\) for the pose estimation solution, and decreased by \(66.8 \%\) for the controller solution.
+  Interestingly, the controller solution becomes more balanced in the time spent in each movement phase, whereas the pose estimation solution becomes front loaded.
+
+  There is also a noticeable difference in the average trial time between scenario 3 and scenario 2, likely attributable to the operator becoming more skilled and experience with each control method and experiment.
+
+  \begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{images/obstacle_results.png}
+    \caption{Standard distribution plot of the results of either experiment}
+    \label{fig:experiment3res}
+  \end{figure}
 
 
 
@@ -430,10 +527,10 @@ Acknowledgments go here.
 \section{Conclusions and future work} % edit subsection heading as appropriate
 \label{sec:conc}
     \subsection{Conclusions}
-	\lipsum[1]
+	% \lipsum[1]
 	
 	\subsection{Future work}
-    \lipsum[1-2] \cite{ref:jCAS10,ref:jCAS09,ref:jCAS09a} \lipsum[3-5]
+    % \lipsum[1-2] \cite{ref:jCAS10,ref:jCAS09,ref:jCAS09a} \lipsum[3-5]
 
 
 

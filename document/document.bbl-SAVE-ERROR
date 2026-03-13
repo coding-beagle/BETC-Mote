@@ -1,0 +1,978 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 3.2 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated by
+% biber as required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+
+\refsection{0}
+  \datalist[entry]{none/global//global/global}
+    \entry{ref:arm_dofs}{article}{}
+      \name{author}{4}{}{%
+        {{hash=2d8d4f45817939d36341b1e1aa8436d3}{%
+           family={Nguyen\bibnamedelima Thai},
+           familyi={N\bibinitperiod\bibinitdelim T\bibinitperiod},
+           given={Dung},
+           giveni={D\bibinitperiod}}}%
+        {{hash=cf7e11784fa4847c7a12eb5e70ec9dc1}{%
+           family={Nguyen\bibnamedelima Van},
+           familyi={N\bibinitperiod\bibinitdelim V\bibinitperiod},
+           given={Dung},
+           giveni={D\bibinitperiod}}}%
+        {{hash=c8f5511799459a80168bc0664ec5d7bd}{%
+           family={Ta\bibnamedelima Van},
+           familyi={T\bibinitperiod\bibinitdelim V\bibinitperiod},
+           given={Phuc},
+           giveni={P\bibinitperiod}}}%
+        {{hash=bffb33a6ba8d2a4b1d400075e0e7bc10}{%
+           family={Do\bibnamedelima Duc},
+           familyi={D\bibinitperiod\bibinitdelim D\bibinitperiod},
+           given={Linh},
+           giveni={L\bibinitperiod}}}%
+      }
+      \strng{namehash}{82a2ed527da46b9909de3b9ce29510dd}
+      \strng{fullhash}{9a9de9a67a3d9ab9e8508f5c7edb929f}
+      \strng{bibnamehash}{82a2ed527da46b9909de3b9ce29510dd}
+      \strng{authorbibnamehash}{82a2ed527da46b9909de3b9ce29510dd}
+      \strng{authornamehash}{82a2ed527da46b9909de3b9ce29510dd}
+      \strng{authorfullhash}{9a9de9a67a3d9ab9e8508f5c7edb929f}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{2017 International Conference on Military Technologies (ICMT)}
+      \field{month}{5}
+      \field{title}{Biomechanical analysis of the shooter-weapon system oscillation}
+      \field{year}{2017}
+      \field{pages}{48\bibrangedash 53}
+      \range{pages}{6}
+      \verb{doi}
+      \verb 10.1109/miltechs.2017.7988729
+      \endverb
+    \endentry
+    \entry{ref:Zhou_Yang_Wang_Dong_2025}{article}{}
+      \name{author}{4}{}{%
+        {{hash=aa2277827bf482fe1146dbfb3fd17244}{%
+           family={Zhou},
+           familyi={Z\bibinitperiod},
+           given={Huiying},
+           giveni={H\bibinitperiod}}}%
+        {{hash=fed866aa96208c113abf3617b4e27f0a}{%
+           family={Yang},
+           familyi={Y\bibinitperiod},
+           given={Geng},
+           giveni={G\bibinitperiod}}}%
+        {{hash=238d2224829eb556c30900aba13bdf00}{%
+           family={Wang},
+           familyi={W\bibinitperiod},
+           given={Baicun},
+           giveni={B\bibinitperiod}}}%
+        {{hash=77ad092ef603d93a476fa01d11bbcc4f}{%
+           family={Dong},
+           familyi={D\bibinitperiod},
+           given={Na},
+           giveni={N\bibinitperiod}}}%
+      }
+      \strng{namehash}{3d88ec85d6de27b232162e209e386ccb}
+      \strng{fullhash}{24258451e82b93dd312cec968c66461f}
+      \strng{bibnamehash}{3d88ec85d6de27b232162e209e386ccb}
+      \strng{authorbibnamehash}{3d88ec85d6de27b232162e209e386ccb}
+      \strng{authornamehash}{3d88ec85d6de27b232162e209e386ccb}
+      \strng{authorfullhash}{24258451e82b93dd312cec968c66461f}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Advanced Topics in Science and Technology in China}
+      \field{title}{Human–robot teleoperation based on Imus}
+      \field{year}{2025}
+      \field{pages}{51\bibrangedash 72}
+      \range{pages}{22}
+      \verb{doi}
+      \verb 10.1007/978-981-96-6139-8_3
+      \endverb
+    \endentry
+    \entry{ref:Lyu_Yang_Yang_2025}{article}{}
+      \name{author}{3}{}{%
+        {{hash=45fd5bea42b894b7f8effa0870f8a8fa}{%
+           family={Lyu},
+           familyi={L\bibinitperiod},
+           given={Honghao},
+           giveni={H\bibinitperiod}}}%
+        {{hash=fed866aa96208c113abf3617b4e27f0a}{%
+           family={Yang},
+           familyi={Y\bibinitperiod},
+           given={Geng},
+           giveni={G\bibinitperiod}}}%
+        {{hash=4dbd51e8c2c9a28100d3aa1c9f036258}{%
+           family={Yang},
+           familyi={Y\bibinitperiod},
+           given={Huayong},
+           giveni={H\bibinitperiod}}}%
+      }
+      \strng{namehash}{de9c34d4860d9399524bdf1b4c551ec0}
+      \strng{fullhash}{3313734b640e869f9dfa37fb1a71a67d}
+      \strng{bibnamehash}{3313734b640e869f9dfa37fb1a71a67d}
+      \strng{authorbibnamehash}{3313734b640e869f9dfa37fb1a71a67d}
+      \strng{authornamehash}{de9c34d4860d9399524bdf1b4c551ec0}
+      \strng{authorfullhash}{3313734b640e869f9dfa37fb1a71a67d}
+      \field{sortinit}{4}
+      \field{sortinithash}{9381316451d1b9788675a07e972a12a7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Advanced Topics in Science and Technology in China}
+      \field{title}{Whole-body human-motion based robot teleoperation}
+      \field{year}{2025}
+      \field{pages}{69\bibrangedash 93}
+      \range{pages}{25}
+      \verb{doi}
+      \verb 10.1007/978-981-96-6545-7_4
+      \endverb
+    \endentry
+    \entry{ref:nullspace}{article}{}
+      \name{author}{2}{}{%
+        {{hash=07b3ba0aa39b0589117dbd127c0e2c53}{%
+           family={Stanev},
+           familyi={S\bibinitperiod},
+           given={Dimitar},
+           giveni={D\bibinitperiod}}}%
+        {{hash=d0d5789b91d9fef16112aa907973e1b7}{%
+           family={Moustakas},
+           familyi={M\bibinitperiod},
+           given={Konstantinos},
+           giveni={K\bibinitperiod}}}%
+      }
+      \strng{namehash}{73a64b47a9da2315543be19aa53eb56f}
+      \strng{fullhash}{73a64b47a9da2315543be19aa53eb56f}
+      \strng{bibnamehash}{73a64b47a9da2315543be19aa53eb56f}
+      \strng{authorbibnamehash}{73a64b47a9da2315543be19aa53eb56f}
+      \strng{authornamehash}{73a64b47a9da2315543be19aa53eb56f}
+      \strng{authorfullhash}{73a64b47a9da2315543be19aa53eb56f}
+      \field{sortinit}{6}
+      \field{sortinithash}{b33bc299efb3c36abec520a4c896a66d}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{PLOS ONE}
+      \field{month}{1}
+      \field{number}{1}
+      \field{title}{Modeling musculoskeletal kinematic and dynamic redundancy using null space projection}
+      \field{volume}{14}
+      \field{year}{2019}
+      \verb{doi}
+      \verb 10.1371/journal.pone.0209171
+      \endverb
+    \endentry
+    \entry{ref:Jin_Ji_Yan_2023}{article}{}
+      \name{author}{3}{}{%
+        {{hash=8c11f3d8005aace3a8cc5309772f8cf3}{%
+           family={Jin},
+           familyi={J\bibinitperiod},
+           given={Huawei},
+           giveni={H\bibinitperiod}}}%
+        {{hash=4baaf882b980dbef7e59ba6b2a97c252}{%
+           family={Ji},
+           familyi={J\bibinitperiod},
+           given={Haitao},
+           giveni={H\bibinitperiod}}}%
+        {{hash=a4a38f0c611f4a20e41744b19c603cda}{%
+           family={Yan},
+           familyi={Y\bibinitperiod},
+           given={Fangzheng},
+           giveni={F\bibinitperiod}}}%
+      }
+      \strng{namehash}{d7f97f1d627312cfc3c597996c3806a5}
+      \strng{fullhash}{9fd88443959a1e2b484474f9b8b51f50}
+      \strng{bibnamehash}{9fd88443959a1e2b484474f9b8b51f50}
+      \strng{authorbibnamehash}{9fd88443959a1e2b484474f9b8b51f50}
+      \strng{authornamehash}{d7f97f1d627312cfc3c597996c3806a5}
+      \strng{authorfullhash}{9fd88443959a1e2b484474f9b8b51f50}
+      \field{sortinit}{9}
+      \field{sortinithash}{0a5ebc79d83c96b6579069544c73c7d4}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Electronics}
+      \field{month}{10}
+      \field{number}{19}
+      \field{title}{An effective obstacle avoidance and motion planning design for underwater telescopic arm robots based on a tent chaotic dung beetle algorithm}
+      \field{volume}{12}
+      \field{year}{2023}
+      \field{pages}{4128}
+      \range{pages}{1}
+      \verb{doi}
+      \verb 10.3390/electronics12194128
+      \endverb
+    \endentry
+    \entry{ref:vranalysis}{article}{}
+      \name{author}{2}{}{%
+        {{hash=5e70bfadc3726456a48e2b1216f526c8}{%
+           family={Jankowski},
+           familyi={J\bibinitperiod},
+           given={Jarosław},
+           giveni={J\bibinitperiod}}}%
+        {{hash=6f6f4242e0c074bc14ff8718b3e49ed8}{%
+           family={Grabowski},
+           familyi={G\bibinitperiod},
+           given={Andrzej},
+           giveni={A\bibinitperiod}}}%
+      }
+      \strng{namehash}{2d8eb33caab00bd58089de79f36024ff}
+      \strng{fullhash}{2d8eb33caab00bd58089de79f36024ff}
+      \strng{bibnamehash}{2d8eb33caab00bd58089de79f36024ff}
+      \strng{authorbibnamehash}{2d8eb33caab00bd58089de79f36024ff}
+      \strng{authornamehash}{2d8eb33caab00bd58089de79f36024ff}
+      \strng{authorfullhash}{2d8eb33caab00bd58089de79f36024ff}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{International Journal of Human-Computer Interaction}
+      \field{month}{11}
+      \field{number}{12}
+      \field{title}{Usability evaluation of VR interface for Mobile Robot teleoperation}
+      \field{volume}{31}
+      \field{year}{2015}
+      \field{pages}{882\bibrangedash 889}
+      \range{pages}{8}
+      \verb{doi}
+      \verb 10.1080/10447318.2015.1039909
+      \endverb
+    \endentry
+    \entry{ref:Mazomenos_Biswas_Cranny_Rajan_Maharatna_Achner_Klemke_Jobges_Ortmann_Langendorfer_2016}{article}{}
+      \name{author}{10}{}{%
+        {{hash=ba3664a9792c1abc112805a200121b05}{%
+           family={Mazomenos},
+           familyi={M\bibinitperiod},
+           given={Evangelos\bibnamedelima B.},
+           giveni={E\bibinitperiod\bibinitdelim B\bibinitperiod}}}%
+        {{hash=ddf6e4def73c97eaa75c896704e51f97}{%
+           family={Biswas},
+           familyi={B\bibinitperiod},
+           given={Dwaipayan},
+           giveni={D\bibinitperiod}}}%
+        {{hash=1a6861c8be1ed1de8f0d893884078244}{%
+           family={Cranny},
+           familyi={C\bibinitperiod},
+           given={Andy},
+           giveni={A\bibinitperiod}}}%
+        {{hash=c4881cc7085a0b77675feb6f21ef696e}{%
+           family={Rajan},
+           familyi={R\bibinitperiod},
+           given={Amal},
+           giveni={A\bibinitperiod}}}%
+        {{hash=0dd6309c13b4cf135f680bcc0ef5249b}{%
+           family={Maharatna},
+           familyi={M\bibinitperiod},
+           given={Koushik},
+           giveni={K\bibinitperiod}}}%
+        {{hash=62815879c58c3e3b74fa1c8e92fb767d}{%
+           family={Achner},
+           familyi={A\bibinitperiod},
+           given={Josy},
+           giveni={J\bibinitperiod}}}%
+        {{hash=ade1ae27589976305b22da6ad3169050}{%
+           family={Klemke},
+           familyi={K\bibinitperiod},
+           given={Jasmin},
+           giveni={J\bibinitperiod}}}%
+        {{hash=c0f470f15cbb095440044c131571ba1e}{%
+           family={Jobges},
+           familyi={J\bibinitperiod},
+           given={Michael},
+           giveni={M\bibinitperiod}}}%
+        {{hash=44d01ecf2ad5bdb613fb2c53c9f48c5b}{%
+           family={Ortmann},
+           familyi={O\bibinitperiod},
+           given={Steffen},
+           giveni={S\bibinitperiod}}}%
+        {{hash=79946e91e8951e5dc9fa6ceaafc32608}{%
+           family={Langendorfer},
+           familyi={L\bibinitperiod},
+           given={Peter},
+           giveni={P\bibinitperiod}}}%
+      }
+      \strng{namehash}{7ab5cb938b641fd1bd85f808732d7cfb}
+      \strng{fullhash}{fc239bf58329a402f229578a33ac2dfb}
+      \strng{bibnamehash}{7ab5cb938b641fd1bd85f808732d7cfb}
+      \strng{authorbibnamehash}{7ab5cb938b641fd1bd85f808732d7cfb}
+      \strng{authornamehash}{7ab5cb938b641fd1bd85f808732d7cfb}
+      \strng{authorfullhash}{fc239bf58329a402f229578a33ac2dfb}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{IEEE Journal of Biomedical and Health Informatics}
+      \field{month}{7}
+      \field{number}{4}
+      \field{title}{Detecting elementary arm movements by tracking upper limb joint angles with Marg sensors}
+      \field{volume}{20}
+      \field{year}{2016}
+      \field{pages}{1088\bibrangedash 1099}
+      \range{pages}{12}
+      \verb{doi}
+      \verb 10.1109/jbhi.2015.2431472
+      \endverb
+    \endentry
+    \entry{ref:Phuong_Cong_2024}{article}{}
+      \name{author}{2}{}{%
+        {{hash=17704e51c0833defd1606bc02be66547}{%
+           family={Phuong},
+           familyi={P\bibinitperiod},
+           given={Le},
+           giveni={L\bibinitperiod}}}%
+        {{hash=9dbd070b2fa89637b5e68d1a5db593e2}{%
+           family={Cong},
+           familyi={C\bibinitperiod},
+           given={Vo},
+           giveni={V\bibinitperiod}}}%
+      }
+      \strng{namehash}{6d9ff634493175a32db16049d78e7874}
+      \strng{fullhash}{6d9ff634493175a32db16049d78e7874}
+      \strng{bibnamehash}{6d9ff634493175a32db16049d78e7874}
+      \strng{authorbibnamehash}{6d9ff634493175a32db16049d78e7874}
+      \strng{authornamehash}{6d9ff634493175a32db16049d78e7874}
+      \strng{authorfullhash}{6d9ff634493175a32db16049d78e7874}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{FME Transactions}
+      \field{number}{1}
+      \field{title}{Control the robot arm through vision-based human hand tracking}
+      \field{volume}{52}
+      \field{year}{2024}
+      \field{pages}{37\bibrangedash 44}
+      \range{pages}{8}
+      \verb{doi}
+      \verb 10.5937/fme2401037p
+      \endverb
+    \endentry
+    \entry{ref:Nalam_Manivannan_2014}{article}{}
+      \name{author}{2}{}{%
+        {{hash=d5015e9f00ae19d508298f70bb52411c}{%
+           family={Nalam},
+           familyi={N\bibinitperiod},
+           given={Varun},
+           giveni={V\bibinitperiod}}}%
+        {{hash=c13378314e2ac03a98faea3cd3ffe714}{%
+           family={Manivannan},
+           familyi={M\bibinitperiod},
+           given={P.V.},
+           giveni={P\bibinitperiod}}}%
+      }
+      \strng{namehash}{4e936ec27c0388e68d69b96a26d073a5}
+      \strng{fullhash}{4e936ec27c0388e68d69b96a26d073a5}
+      \strng{bibnamehash}{4e936ec27c0388e68d69b96a26d073a5}
+      \strng{authorbibnamehash}{4e936ec27c0388e68d69b96a26d073a5}
+      \strng{authornamehash}{4e936ec27c0388e68d69b96a26d073a5}
+      \strng{authorfullhash}{4e936ec27c0388e68d69b96a26d073a5}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Applied Mechanics and Materials}
+      \field{month}{7}
+      \field{title}{Development of a contact based human arm motion analysis system for virtual reality applications}
+      \field{volume}{592–594}
+      \field{year}{2014}
+      \field{pages}{2139\bibrangedash 2144}
+      \range{pages}{6}
+      \verb{doi}
+      \verb 10.4028/www.scientific.net/amm.592-594.2139
+      \endverb
+    \endentry
+    \entry{ref:videobasedumanmotioncapture}{article}{}
+      \name{author}{4}{}{%
+        {{hash=1fffcefedf3ee0de8d6eaf54ce15af5e}{%
+           family={Liu},
+           familyi={L\bibinitperiod},
+           given={Xiaoming},
+           giveni={X\bibinitperiod}}}%
+        {{hash=d66515d5a94236fa8057480c1c30f206}{%
+           family={Zhuang},
+           familyi={Z\bibinitperiod},
+           given={Yueting},
+           giveni={Y\bibinitperiod}}}%
+        {{hash=e2101a0f6a72a2fb022cd3e2d45461e1}{%
+           family={Wu},
+           familyi={W\bibinitperiod},
+           given={Yi},
+           giveni={Y\bibinitperiod}}}%
+        {{hash=28d5b977210dd67d01800c5445355db3}{%
+           family={Pan},
+           familyi={P\bibinitperiod},
+           given={Yunhe},
+           giveni={Y\bibinitperiod}}}%
+      }
+      \strng{namehash}{72522accb479a3a6581a5bc243321903}
+      \strng{fullhash}{f84badcc751753ecadb14885a1af5e98}
+      \strng{bibnamehash}{72522accb479a3a6581a5bc243321903}
+      \strng{authorbibnamehash}{72522accb479a3a6581a5bc243321903}
+      \strng{authornamehash}{72522accb479a3a6581a5bc243321903}
+      \strng{authorfullhash}{f84badcc751753ecadb14885a1af5e98}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{1999 IEEE Third Workshop on Multimedia Signal Processing (Cat. No.99TH8451)}
+      \field{title}{Video based human motion capture}
+      \field{year}{1999}
+      \field{pages}{483\bibrangedash 488}
+      \range{pages}{6}
+      \verb{doi}
+      \verb 10.1109/mmsp.1999.793896
+      \endverb
+    \endentry
+    \entry{ref:whatmocap}{misc}{}
+      \name{author}{1}{}{%
+        {{hash=453175561828c414a707d30e167c66ab}{%
+           family={Crawford},
+           familyi={C\bibinitperiod},
+           given={Matt},
+           giveni={M\bibinitperiod}}}%
+      }
+      \strng{namehash}{453175561828c414a707d30e167c66ab}
+      \strng{fullhash}{453175561828c414a707d30e167c66ab}
+      \strng{bibnamehash}{453175561828c414a707d30e167c66ab}
+      \strng{authorbibnamehash}{453175561828c414a707d30e167c66ab}
+      \strng{authornamehash}{453175561828c414a707d30e167c66ab}
+      \strng{authorfullhash}{453175561828c414a707d30e167c66ab}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Filmmaking Lifestyle}
+      \field{month}{3}
+      \field{title}{What is motion capture (Mo-Cap): The definitive guide}
+      \field{year}{2025}
+      \verb{urlraw}
+      \verb https://filmlifestyle.com/what-is-motion-capture/
+      \endverb
+      \verb{url}
+      \verb https://filmlifestyle.com/what-is-motion-capture/
+      \endverb
+    \endentry
+    \entry{ref:mocapwhy}{misc}{}
+      \name{author}{1}{}{%
+        {{hash=92e36718632a43c1b8b1eda6e1878405}{%
+           family={Milling},
+           familyi={M\bibinitperiod},
+           given={Bill},
+           giveni={B\bibinitperiod}}}%
+      }
+      \list{publisher}{1}{%
+        {American Movie Company}%
+      }
+      \strng{namehash}{92e36718632a43c1b8b1eda6e1878405}
+      \strng{fullhash}{92e36718632a43c1b8b1eda6e1878405}
+      \strng{bibnamehash}{92e36718632a43c1b8b1eda6e1878405}
+      \strng{authorbibnamehash}{92e36718632a43c1b8b1eda6e1878405}
+      \strng{authornamehash}{92e36718632a43c1b8b1eda6e1878405}
+      \strng{authorfullhash}{92e36718632a43c1b8b1eda6e1878405}
+      \field{sortinit}{1}
+      \field{sortinithash}{4f6aaa89bab872aa0999fec09ff8e98a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{American Movie Company}
+      \field{month}{7}
+      \field{title}{Motion capture: Why is it needed, and how does it work?}
+      \field{year}{2024}
+      \verb{urlraw}
+      \verb https://www.americanmovieco.com/blog/motion-capture-why-is-it-needed-and-how-does-it-work
+      \endverb
+      \verb{url}
+      \verb https://www.americanmovieco.com/blog/motion-capture-why-is-it-needed-and-how-does-it-work
+      \endverb
+    \endentry
+    \entry{ref:teleopanalysis}{article}{}
+      \name{author}{3}{}{%
+        {{hash=c7d2e713ce207bdc03d8c7249fa0dd0f}{%
+           family={Doisy},
+           familyi={D\bibinitperiod},
+           given={Guillaume},
+           giveni={G\bibinitperiod}}}%
+        {{hash=21f1fa5a2d67403eed1518923fd167af}{%
+           family={Ronen},
+           familyi={R\bibinitperiod},
+           given={Adi},
+           giveni={A\bibinitperiod}}}%
+        {{hash=a8d1b47fb3df858532202719372e6f64}{%
+           family={Edan},
+           familyi={E\bibinitperiod},
+           given={Yael},
+           giveni={Y\bibinitperiod}}}%
+      }
+      \strng{namehash}{7857228458be98e06c88c8a7b9807421}
+      \strng{fullhash}{d317bbff35d1d90fedb885f505218f74}
+      \strng{bibnamehash}{d317bbff35d1d90fedb885f505218f74}
+      \strng{authorbibnamehash}{d317bbff35d1d90fedb885f505218f74}
+      \strng{authornamehash}{7857228458be98e06c88c8a7b9807421}
+      \strng{authorfullhash}{d317bbff35d1d90fedb885f505218f74}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Applied Ergonomics}
+      \field{month}{1}
+      \field{title}{Comparison of three different techniques for camera and motion control of a teleoperated robot}
+      \field{volume}{58}
+      \field{year}{2017}
+      \field{pages}{527\bibrangedash 534}
+      \range{pages}{8}
+      \verb{doi}
+      \verb 10.1016/j.apergo.2016.05.001
+      \endverb
+    \endentry
+    \entry{ref:movementrange}{article}{}
+      \name{author}{3}{}{%
+        {{hash=895ebca259beccd73f3a892fecedc42c}{%
+           family={Nisky},
+           familyi={N\bibinitperiod},
+           given={Ilana},
+           giveni={I\bibinitperiod}}}%
+        {{hash=224d5e11a76317cabb425023cce225f4}{%
+           family={Hsieh},
+           familyi={H\bibinitperiod},
+           given={Michael\bibnamedelima H.},
+           giveni={M\bibinitperiod\bibinitdelim H\bibinitperiod}}}%
+        {{hash=bac61a3e8656a1a0694c87bf2a42acae}{%
+           family={Okamura},
+           familyi={O\bibinitperiod},
+           given={Allison\bibnamedelima M.},
+           giveni={A\bibinitperiod\bibinitdelim M\bibinitperiod}}}%
+      }
+      \strng{namehash}{11d0e88c376eb3021dfcb9fe717dc0d7}
+      \strng{fullhash}{5344e74fabf96e5f83bc0e4ff799ac37}
+      \strng{bibnamehash}{5344e74fabf96e5f83bc0e4ff799ac37}
+      \strng{authorbibnamehash}{5344e74fabf96e5f83bc0e4ff799ac37}
+      \strng{authornamehash}{11d0e88c376eb3021dfcb9fe717dc0d7}
+      \strng{authorfullhash}{5344e74fabf96e5f83bc0e4ff799ac37}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{IEEE Transactions on Biomedical Engineering}
+      \field{month}{12}
+      \field{number}{12}
+      \field{title}{Uncontrolled manifold analysis of ARM joint angle variability during robotic teleoperation and Freehand Movement of Surgeons and novices}
+      \field{volume}{61}
+      \field{year}{2014}
+      \field{pages}{2869\bibrangedash 2881}
+      \range{pages}{13}
+      \verb{doi}
+      \verb 10.1109/tbme.2014.2332359
+      \endverb
+    \endentry
+    \entry{ref:teleoplatency}{article}{}
+      \name{author}{4}{}{%
+        {{hash=94e40cd714e4d66f641d0959bc295c59}{%
+           family={Louca},
+           familyi={L\bibinitperiod},
+           given={Joe},
+           giveni={J\bibinitperiod}}}%
+        {{hash=7c6ad14b250cf6c8ba8e92e4ad94f196}{%
+           family={Eder},
+           familyi={E\bibinitperiod},
+           given={Kerstin},
+           giveni={K\bibinitperiod}}}%
+        {{hash=2df1b5c2c3b440aaced4a8d1dc307804}{%
+           family={Vrublevskis},
+           familyi={V\bibinitperiod},
+           given={John},
+           giveni={J\bibinitperiod}}}%
+        {{hash=de1ef33d47fd9ecbfa21df52c1dea089}{%
+           family={Tzemanaki},
+           familyi={T\bibinitperiod},
+           given={Antonia},
+           giveni={A\bibinitperiod}}}%
+      }
+      \strng{namehash}{e248e65a54a26ea232ecda95742f4343}
+      \strng{fullhash}{0499be83454fced0215e2c009ce9212c}
+      \strng{bibnamehash}{e248e65a54a26ea232ecda95742f4343}
+      \strng{authorbibnamehash}{e248e65a54a26ea232ecda95742f4343}
+      \strng{authornamehash}{e248e65a54a26ea232ecda95742f4343}
+      \strng{authorfullhash}{0499be83454fced0215e2c009ce9212c}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{ACM Transactions on Human-Robot Interaction}
+      \field{month}{6}
+      \field{number}{2}
+      \field{title}{Impact of haptic feedback in high latency teleoperation for space applications}
+      \field{volume}{13}
+      \field{year}{2024}
+      \field{pages}{1\bibrangedash 21}
+      \range{pages}{21}
+      \verb{doi}
+      \verb 10.1145/3651993
+      \endverb
+    \endentry
+    \entry{ref:imuerror}{article}{}
+      \name{author}{3}{}{%
+        {{hash=13fe30618a231e4038369248467c2abf}{%
+           family={Ricci},
+           familyi={R\bibinitperiod},
+           given={Luca},
+           giveni={L\bibinitperiod}}}%
+        {{hash=45b3af9c3e66371b8e0d6111802cd318}{%
+           family={Taffoni},
+           familyi={T\bibinitperiod},
+           given={Fabrizio},
+           giveni={F\bibinitperiod}}}%
+        {{hash=59fdc9d5393484838f77e1e07c237734}{%
+           family={Formica},
+           familyi={F\bibinitperiod},
+           given={Domenico},
+           giveni={D\bibinitperiod}}}%
+      }
+      \strng{namehash}{60b49cbc1e2e0693278dbdbe72d6c204}
+      \strng{fullhash}{a6255e1015f901c443dbdd079997489b}
+      \strng{bibnamehash}{a6255e1015f901c443dbdd079997489b}
+      \strng{authorbibnamehash}{a6255e1015f901c443dbdd079997489b}
+      \strng{authornamehash}{60b49cbc1e2e0693278dbdbe72d6c204}
+      \strng{authorfullhash}{a6255e1015f901c443dbdd079997489b}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{PLOS ONE}
+      \field{month}{9}
+      \field{number}{9}
+      \field{title}{On the orientation error of IMU: Investigating static and dynamic accuracy targeting human motion}
+      \field{volume}{11}
+      \field{year}{2016}
+      \verb{doi}
+      \verb 10.1371/journal.pone.0161940
+      \endverb
+    \endentry
+    \entry{ref:imudatasheet}{manual}{}
+      \name{author}{1}{}{%
+        {{hash=f0c935e19df953b803d7dbe46444a5eb}{%
+           family={InvenSense},
+           familyi={I\bibinitperiod},
+           given={TDK},
+           giveni={T\bibinitperiod}}}%
+      }
+      \strng{namehash}{f0c935e19df953b803d7dbe46444a5eb}
+      \strng{fullhash}{f0c935e19df953b803d7dbe46444a5eb}
+      \strng{bibnamehash}{f0c935e19df953b803d7dbe46444a5eb}
+      \strng{authorbibnamehash}{f0c935e19df953b803d7dbe46444a5eb}
+      \strng{authornamehash}{f0c935e19df953b803d7dbe46444a5eb}
+      \strng{authorfullhash}{f0c935e19df953b803d7dbe46444a5eb}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{title}{ICM-20948 Datasheet}
+      \field{year}{2017}
+    \endentry
+    \entry{ref:cverror}{article}{}
+      \name{author}{5}{}{%
+        {{hash=750f950ac7e7c6eb92db4793d9c16a0d}{%
+           family={Wang},
+           familyi={W\bibinitperiod},
+           given={Hanwen},
+           giveni={H\bibinitperiod}}}%
+        {{hash=cbda4e86d2f259fd5eb69a0bc470c27e}{%
+           family={Xie},
+           familyi={X\bibinitperiod},
+           given={Ziyang},
+           giveni={Z\bibinitperiod}}}%
+        {{hash=6f6f1357e5a7fb658e3e9c999886ce83}{%
+           family={Lu},
+           familyi={L\bibinitperiod},
+           given={Lu},
+           giveni={L\bibinitperiod}}}%
+        {{hash=502de95c3193f5c283f4ef712520a97e}{%
+           family={Li},
+           familyi={L\bibinitperiod},
+           given={Li},
+           giveni={L\bibinitperiod}}}%
+        {{hash=969fd1158d2138fb1cf939d32f447be6}{%
+           family={Xu},
+           familyi={X\bibinitperiod},
+           given={Xu},
+           giveni={X\bibinitperiod}}}%
+      }
+      \strng{namehash}{b58543296c4442a6404095faeaf886a4}
+      \strng{fullhash}{f4bb23ccf49198c12297f977ec315bbb}
+      \strng{bibnamehash}{b58543296c4442a6404095faeaf886a4}
+      \strng{authorbibnamehash}{b58543296c4442a6404095faeaf886a4}
+      \strng{authornamehash}{b58543296c4442a6404095faeaf886a4}
+      \strng{authorfullhash}{f4bb23ccf49198c12297f977ec315bbb}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Journal of Biomechanics}
+      \field{month}{12}
+      \field{title}{A computer-vision method to estimate joint angles and L5/S1 moments during lifting tasks through a single camera}
+      \field{volume}{129}
+      \field{year}{2021}
+      \field{pages}{110860}
+      \range{pages}{1}
+      \verb{doi}
+      \verb 10.1016/j.jbiomech.2021.110860
+      \endverb
+    \endentry
+    \entry{ref:cvlatency}{article}{}
+      \name{author}{6}{}{%
+        {{hash=7a96a3a35e4889c76f26209f02d2ca8e}{%
+           family={Starner},
+           familyi={S\bibinitperiod},
+           given={Thad},
+           giveni={T\bibinitperiod}}}%
+        {{hash=89e3f1ee83923a2c7a44b7597b35fccd}{%
+           family={Leibe},
+           familyi={L\bibinitperiod},
+           given={Bastian},
+           giveni={B\bibinitperiod}}}%
+        {{hash=5aceb742cdf021564a365f36fd243783}{%
+           family={Minnen},
+           familyi={M\bibinitperiod},
+           given={David},
+           giveni={D\bibinitperiod}}}%
+        {{hash=5240c75b6719c617956b216444ed228d}{%
+           family={Westyn},
+           familyi={W\bibinitperiod},
+           given={Tracy},
+           giveni={T\bibinitperiod}}}%
+        {{hash=d5166be770f4372895b1e9314cb5e359}{%
+           family={Hurst},
+           familyi={H\bibinitperiod},
+           given={Amy},
+           giveni={A\bibinitperiod}}}%
+        {{hash=76349a7144ebdb425c49c00303933566}{%
+           family={Weeks},
+           familyi={W\bibinitperiod},
+           given={Justin},
+           giveni={J\bibinitperiod}}}%
+      }
+      \strng{namehash}{be6a63946426743755302bf93cbf3a87}
+      \strng{fullhash}{d19da696ce58dda168a1aed42ab63938}
+      \strng{bibnamehash}{be6a63946426743755302bf93cbf3a87}
+      \strng{authorbibnamehash}{be6a63946426743755302bf93cbf3a87}
+      \strng{authornamehash}{be6a63946426743755302bf93cbf3a87}
+      \strng{authorfullhash}{d19da696ce58dda168a1aed42ab63938}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Machine Vision and Applications}
+      \field{month}{4}
+      \field{number}{1}
+      \field{title}{The perceptive workbench: Computer-vision-based gesture tracking, object tracking, and 3D reconstruction for augmented desks}
+      \field{volume}{14}
+      \field{year}{2003}
+      \field{pages}{59\bibrangedash 71}
+      \range{pages}{13}
+      \verb{doi}
+      \verb 10.1007/s00138-002-0096-8
+      \endverb
+    \endentry
+    \entry{ref:bendaccuracy}{article}{}
+      \name{author}{1}{}{%
+        {{hash=b468e34ceaa302469991a469f7bcc0de}{%
+           family={Saggio},
+           familyi={S\bibinitperiod},
+           given={Giovanni},
+           giveni={G\bibinitperiod}}}%
+      }
+      \strng{namehash}{b468e34ceaa302469991a469f7bcc0de}
+      \strng{fullhash}{b468e34ceaa302469991a469f7bcc0de}
+      \strng{bibnamehash}{b468e34ceaa302469991a469f7bcc0de}
+      \strng{authorbibnamehash}{b468e34ceaa302469991a469f7bcc0de}
+      \strng{authornamehash}{b468e34ceaa302469991a469f7bcc0de}
+      \strng{authorfullhash}{b468e34ceaa302469991a469f7bcc0de}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{2011 4th IEEE International Workshop on Advances in Sensors and Interfaces (IWASI)}
+      \field{month}{6}
+      \field{title}{Bend sensor arrays for hand movement tracking in biomedical systems}
+      \field{year}{2011}
+      \field{pages}{51\bibrangedash 54}
+      \range{pages}{4}
+      \verb{doi}
+      \verb 10.1109/iwasi.2011.6004685
+      \endverb
+    \endentry
+    \entry{ref:arucomarkers}{article}{}
+      \name{author}{5}{}{%
+        {{hash=c7d6b11403d0f9980d3a5369210c8422}{%
+           family={Wieczorek},
+           familyi={W\bibinitperiod},
+           given={Bartosz},
+           giveni={B\bibinitperiod}}}%
+        {{hash=63951082248b8fd386bc3dc7ed61dcf4}{%
+           family={Warguła},
+           familyi={W\bibinitperiod},
+           given={Łukasz},
+           giveni={Ł\bibinitperiod}}}%
+        {{hash=6a279c3addb415da7f43c7afa975c733}{%
+           family={Kukla},
+           familyi={K\bibinitperiod},
+           given={Mateusz},
+           giveni={M\bibinitperiod}}}%
+        {{hash=8511149f1294c42c2e21edc24beb22b2}{%
+           family={Kubacki},
+           familyi={K\bibinitperiod},
+           given={Arkadiusz},
+           giveni={A\bibinitperiod}}}%
+        {{hash=2f1df46da409a58db0584043e344bc6e}{%
+           family={Górecki},
+           familyi={G\bibinitperiod},
+           given={Jan},
+           giveni={J\bibinitperiod}}}%
+      }
+      \strng{namehash}{ba1397c4a219f577db4de433ec96c982}
+      \strng{fullhash}{633662f0e4f31768ee1e3c91a248dac1}
+      \strng{bibnamehash}{ba1397c4a219f577db4de433ec96c982}
+      \strng{authorbibnamehash}{ba1397c4a219f577db4de433ec96c982}
+      \strng{authornamehash}{ba1397c4a219f577db4de433ec96c982}
+      \strng{authorfullhash}{633662f0e4f31768ee1e3c91a248dac1}
+      \field{sortinit}{3}
+      \field{sortinithash}{ad6fe7482ffbd7b9f99c9e8b5dccd3d7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Technical Transactions}
+      \field{title}{The effects of ARUCO marker velocity and size on motion capture detection and accuracy in the context of human body kinematics analysis}
+      \field{year}{2020}
+      \field{pages}{1\bibrangedash 10}
+      \range{pages}{10}
+      \verb{doi}
+      \verb 10.37705/techtrans/e2020036
+      \endverb
+    \endentry
+    \entry{ref:jCAS10}{article}{}
+      \name{author}{5}{}{%
+        {{hash=e7f8bb9662039ed7cc169b2d84af04e1}{%
+           family={Casson},
+           familyi={C\bibinitperiod},
+           given={Alexander\bibnamedelima J.},
+           giveni={A\bibinitperiod\bibinitdelim J\bibinitperiod}}}%
+        {{hash=19f431c00504e9f4d5a59d31cb6fd492}{%
+           family={Yates},
+           familyi={Y\bibinitperiod},
+           given={David\bibnamedelima C.},
+           giveni={D\bibinitperiod\bibinitdelim C\bibinitperiod}}}%
+        {{hash=0454635ea2db437d8981208febc07709}{%
+           family={Smith},
+           familyi={S\bibinitperiod},
+           given={Shelagh\bibnamedelima J.M.},
+           giveni={S\bibinitperiod\bibinitdelim J\bibinitperiod}}}%
+        {{hash=1e1854c2e37178f250f2cb00fcd055ee}{%
+           family={Duncan},
+           familyi={D\bibinitperiod},
+           given={John\bibnamedelima S.},
+           giveni={J\bibinitperiod\bibinitdelim S\bibinitperiod}}}%
+        {{hash=418cd1036e680b915a56e273f57cf20d}{%
+           family={Rodriguez-Villegas},
+           familyi={R\bibinithyphendelim V\bibinitperiod},
+           given={Esther},
+           giveni={E\bibinitperiod}}}%
+      }
+      \strng{namehash}{5a9563c04dfce5dedda8b82db559411c}
+      \strng{fullhash}{52cb6da492c3ec0528a842acb5cfb767}
+      \strng{bibnamehash}{5a9563c04dfce5dedda8b82db559411c}
+      \strng{authorbibnamehash}{5a9563c04dfce5dedda8b82db559411c}
+      \strng{authornamehash}{5a9563c04dfce5dedda8b82db559411c}
+      \strng{authorfullhash}{52cb6da492c3ec0528a842acb5cfb767}
+      \field{extraname}{1}
+      \field{sortinit}{3}
+      \field{sortinithash}{ad6fe7482ffbd7b9f99c9e8b5dccd3d7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{IEEE Eng. Biol. Med. Mag.}
+      \field{number}{3}
+      \field{title}{Wearable electroencephalography}
+      \field{volume}{29}
+      \field{year}{2010}
+      \field{pages}{44\bibrangedash 56}
+      \range{pages}{13}
+    \endentry
+    \entry{ref:jCAS09}{article}{}
+      \name{author}{3}{}{%
+        {{hash=e7f8bb9662039ed7cc169b2d84af04e1}{%
+           family={Casson},
+           familyi={C\bibinitperiod},
+           given={Alexander\bibnamedelima J.},
+           giveni={A\bibinitperiod\bibinitdelim J\bibinitperiod}}}%
+        {{hash=a63acb09d3205b922b4f79c3fc2525be}{%
+           family={Luna},
+           familyi={L\bibinitperiod},
+           given={Elena},
+           giveni={E\bibinitperiod}}}%
+        {{hash=418cd1036e680b915a56e273f57cf20d}{%
+           family={Rodriguez-Villegas},
+           familyi={R\bibinithyphendelim V\bibinitperiod},
+           given={Esther},
+           giveni={E\bibinitperiod}}}%
+      }
+      \strng{namehash}{5a9563c04dfce5dedda8b82db559411c}
+      \strng{fullhash}{c1ad886e10f3ba4a891ce149468a07ef}
+      \strng{bibnamehash}{c1ad886e10f3ba4a891ce149468a07ef}
+      \strng{authorbibnamehash}{c1ad886e10f3ba4a891ce149468a07ef}
+      \strng{authornamehash}{5a9563c04dfce5dedda8b82db559411c}
+      \strng{authorfullhash}{c1ad886e10f3ba4a891ce149468a07ef}
+      \field{extraname}{2}
+      \field{sortinit}{3}
+      \field{sortinithash}{ad6fe7482ffbd7b9f99c9e8b5dccd3d7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{J. Neurosci. Meth.}
+      \field{number}{2}
+      \field{title}{Performance metrics for the accurate characterisation of interictal spike detection algorithms}
+      \field{volume}{177}
+      \field{year}{2009}
+      \field{pages}{479\bibrangedash 487}
+      \range{pages}{9}
+    \endentry
+    \entry{ref:jCAS09a}{article}{}
+      \name{author}{2}{}{%
+        {{hash=e7f8bb9662039ed7cc169b2d84af04e1}{%
+           family={Casson},
+           familyi={C\bibinitperiod},
+           given={Alexander\bibnamedelima J.},
+           giveni={A\bibinitperiod\bibinitdelim J\bibinitperiod}}}%
+        {{hash=418cd1036e680b915a56e273f57cf20d}{%
+           family={Rodriguez-Villegas},
+           familyi={R\bibinithyphendelim V\bibinitperiod},
+           given={Esther},
+           giveni={E\bibinitperiod}}}%
+      }
+      \strng{namehash}{a73e75fe6b7891d2e35bee7ab49db0e6}
+      \strng{fullhash}{a73e75fe6b7891d2e35bee7ab49db0e6}
+      \strng{bibnamehash}{a73e75fe6b7891d2e35bee7ab49db0e6}
+      \strng{authorbibnamehash}{a73e75fe6b7891d2e35bee7ab49db0e6}
+      \strng{authornamehash}{a73e75fe6b7891d2e35bee7ab49db0e6}
+      \strng{authorfullhash}{a73e75fe6b7891d2e35bee7ab49db0e6}
+      \field{sortinit}{3}
+      \field{sortinithash}{ad6fe7482ffbd7b9f99c9e8b5dccd3d7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{IEEE T. Biomed. Eng.}
+      \field{number}{12}
+      \field{title}{Toward online data reduction for portable electroencephalography systems in epilepsy}
+      \field{volume}{56}
+      \field{year}{2009}
+      \field{pages}{2816\bibrangedash 2825}
+      \range{pages}{10}
+    \endentry
+  \enddatalist
+\endrefsection
+\endinput
+
