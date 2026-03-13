@@ -319,8 +319,9 @@ def _draw_transport_hud(frame, active, wrist_pos, W):
         )
         return
 
+    hits = getattr(active, "_total_hits", None)  # None = not an obstacle trial
     px, py = W - 290, 30
-    panel_h = 140
+    panel_h = 158 if hits is not None else 140
     cv2.rectangle(frame, (px - 8, py - 4), (W - 8, py + panel_h), (22, 22, 28), -1)
     cv2.rectangle(frame, (px - 8, py - 4), (W - 8, py + panel_h), phase_col, 1)
 
@@ -396,3 +397,15 @@ def _draw_transport_hud(frame, active, wrist_pos, W):
         t_col,
         1,
     )
+
+    if hits is not None:
+        h_col = _cv_col(220, 80, 80) if hits > 0 else (130, 130, 130)
+        cv2.putText(
+            frame,
+            f"hits  {hits}",
+            (px, py + 148),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            h_col,
+            1,
+        )

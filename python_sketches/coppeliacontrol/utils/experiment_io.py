@@ -158,6 +158,7 @@ def save_results(experiment, mode: str):
     results = experiment.results
     if not results:
         return
+    print("Sample result keys:", list(results[0].keys()))
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"poseEstimation{mode.capitalize()}Results/{mode}_results_{ts}.csv"
 
@@ -352,21 +353,21 @@ def make_transport_experiment(sim, robot_shoulder_world, start_pos=None):
 # ── persistence ───────────────────────────────────────────────────────────────
 
 
-def save_results(experiment, mode: str):
-    """Persist experiment results to a timestamped CSV."""
-    results = experiment.results
-    if not results:
-        return
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"poseEstimation{mode.capitalize()}Results/{mode}_results_{ts}.csv"
+# def save_results(experiment, mode: str):
+#     """Persist experiment results to a timestamped CSV."""
+#     results = experiment.results
+#     if not results:
+#         return
+#     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+#     filename = f"poseEstimation{mode.capitalize()}Results/{mode}_results_{ts}.csv"
 
-    if mode == MODE_REACH:
-        _save_reach(filename, experiment, results)
-    else:
-        _save_transport(filename, results)
+#     if mode == MODE_REACH:
+#         _save_reach(filename, experiment, results)
+#     else:
+#         _save_transport(filename, results)
 
-    print(f"Results saved to {filename}")
-    print(experiment.summary())
+#     print(f"Results saved to {filename}")
+#     print(experiment.summary())
 
 
 def _save_reach(filename, experiment, results):
@@ -398,64 +399,64 @@ def _save_reach(filename, experiment, results):
             )
 
 
-def _save_transport(filename, results):
-    fieldnames = [
-        "trial",
-        "label",
-        "result",
-        "duration_s",
-        "cube_x",
-        "cube_y",
-        "cube_z",
-        "drop_x",
-        "drop_y",
-        "drop_z",
-        "start_x",
-        "start_y",
-        "start_z",
-        "dist_start_to_cube",
-        "dist_start_to_drop",
-        "phase_approach_s",
-        "phase_grip_s",
-        "phase_carry_s",
-        "phase_place_s",
-    ]
-    with open(filename, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for r in results:
-            cp = r.get("cube_pos", [None, None, None])
-            dp = r.get("drop_pos", [None, None, None])
-            spos = r.get("start_pos") or [None, None, None]
-            sp = r.get("phase_splits", {})
-            writer.writerow(
-                {
-                    "trial": r["trial"],
-                    "label": r["label"],
-                    "result": r["result"],
-                    "duration_s": round(r["duration"], 3),
-                    "cube_x": round(cp[0], 4) if cp[0] is not None else "",
-                    "cube_y": round(cp[1], 4) if cp[1] is not None else "",
-                    "cube_z": round(cp[2], 4) if cp[2] is not None else "",
-                    "drop_x": round(dp[0], 4) if dp[0] is not None else "",
-                    "drop_y": round(dp[1], 4) if dp[1] is not None else "",
-                    "drop_z": round(dp[2], 4) if dp[2] is not None else "",
-                    "start_x": round(spos[0], 4) if spos[0] is not None else "",
-                    "start_y": round(spos[1], 4) if spos[1] is not None else "",
-                    "start_z": round(spos[2], 4) if spos[2] is not None else "",
-                    "dist_start_to_cube": (
-                        round(r["dist_start_to_cube"], 4)
-                        if r.get("dist_start_to_cube") is not None
-                        else ""
-                    ),
-                    "dist_start_to_drop": (
-                        round(r["dist_start_to_drop"], 4)
-                        if r.get("dist_start_to_drop") is not None
-                        else ""
-                    ),
-                    "phase_approach_s": round(sp.get("approach", 0.0), 3),
-                    "phase_grip_s": round(sp.get("grip", 0.0), 3),
-                    "phase_carry_s": round(sp.get("carry", 0.0), 3),
-                    "phase_place_s": round(sp.get("place", 0.0), 3),
-                }
-            )
+# def _save_transport(filename, results):
+#     fieldnames = [
+#         "trial",
+#         "label",
+#         "result",
+#         "duration_s",
+#         "cube_x",
+#         "cube_y",
+#         "cube_z",
+#         "drop_x",
+#         "drop_y",
+#         "drop_z",
+#         "start_x",
+#         "start_y",
+#         "start_z",
+#         "dist_start_to_cube",
+#         "dist_start_to_drop",
+#         "phase_approach_s",
+#         "phase_grip_s",
+#         "phase_carry_s",
+#         "phase_place_s",
+#     ]
+#     with open(filename, "w", newline="") as f:
+#         writer = csv.DictWriter(f, fieldnames=fieldnames)
+#         writer.writeheader()
+#         for r in results:
+#             cp = r.get("cube_pos", [None, None, None])
+#             dp = r.get("drop_pos", [None, None, None])
+#             spos = r.get("start_pos") or [None, None, None]
+#             sp = r.get("phase_splits", {})
+#             writer.writerow(
+#                 {
+#                     "trial": r["trial"],
+#                     "label": r["label"],
+#                     "result": r["result"],
+#                     "duration_s": round(r["duration"], 3),
+#                     "cube_x": round(cp[0], 4) if cp[0] is not None else "",
+#                     "cube_y": round(cp[1], 4) if cp[1] is not None else "",
+#                     "cube_z": round(cp[2], 4) if cp[2] is not None else "",
+#                     "drop_x": round(dp[0], 4) if dp[0] is not None else "",
+#                     "drop_y": round(dp[1], 4) if dp[1] is not None else "",
+#                     "drop_z": round(dp[2], 4) if dp[2] is not None else "",
+#                     "start_x": round(spos[0], 4) if spos[0] is not None else "",
+#                     "start_y": round(spos[1], 4) if spos[1] is not None else "",
+#                     "start_z": round(spos[2], 4) if spos[2] is not None else "",
+#                     "dist_start_to_cube": (
+#                         round(r["dist_start_to_cube"], 4)
+#                         if r.get("dist_start_to_cube") is not None
+#                         else ""
+#                     ),
+#                     "dist_start_to_drop": (
+#                         round(r["dist_start_to_drop"], 4)
+#                         if r.get("dist_start_to_drop") is not None
+#                         else ""
+#                     ),
+#                     "phase_approach_s": round(sp.get("approach", 0.0), 3),
+#                     "phase_grip_s": round(sp.get("grip", 0.0), 3),
+#                     "phase_carry_s": round(sp.get("carry", 0.0), 3),
+#                     "phase_place_s": round(sp.get("place", 0.0), 3),
+#                 }
+#             )
