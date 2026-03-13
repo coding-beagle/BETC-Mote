@@ -829,134 +829,19 @@ def build_metrics_figure():
 
 def build_phase_figure():
     """
-    Four-row transport phase analysis:
+    Two-row transport phase analysis:
 
-    Row 0 (full width): Stacked bar — mean time per phase, one bar per experiment.
-                        Bars are grouped by group (A left, B right).
-    Row 1:              Pie charts — average proportion of trial time spent in each
-                        phase.  One pie per loaded group, plus a combined pie when
-                        both groups are present.
-    Row 2 left:         Box-plots of per-trial phase times pooled across all
-                        transport entries, one box per phase, both groups overlaid.
-    Row 2 right:        Scatter — dist_start_to_cube vs trial duration,
-                        coloured by group, with linear regression lines.
-                        (Only shown if dist columns are present.)
+    Row 0: Pie charts — one per loaded group (A, and B if present).
+           Each pie is sized proportional to sqrt(avg trial duration) so
+           area ∝ time.  Slices show mean seconds and % per phase.
+    Row 1 left:  Box-plots of per-trial phase times, both groups overlaid.
+    Row 1 right: Scatter — dist_start_to_cube vs trial duration with
+                 linear regression lines (requires start_pos columns).
     """
     ta, tb = group_titles["A"], group_titles["B"]
-    has_b_group = bool(groups["B"]) and any(
-        e["csv_type"] == "transport" for e in groups["B"]
-    )
 
-    # Pie row: 2 pies if only A, 3 if both A and B
-    n_pies = 3 if has_b_group else 2  # per-group + combined  (or just A + combined)
-    pie_cols = n_pies
-
-    fig = plt.figure(figsize=(16, 15), num="Phase Analysis")
-    fig.suptitle("Transport Phase Analysis", fontsize=14, fontweight="bold")
-
-    # GridSpec: row 0 = stacked bar (full width), row 1 = pies, row 2 = box + scatter
-    gs = gridspec.GridSpec(
-        3,
-        pie_cols,
-        figure=fig,
-        hspace=0.65,
-        wspace=0.38,
-        height_ratios=[1.1, 1.2, 1.1],
-    )
-
-    ax_stack = fig.add_subplot(gs[0, :])
-    ax_box = fig.add_subplot(gs[2, : pie_cols // 2])
-    ax_scatter = fig.add_subplot(gs[2, pie_cols // 2 :])
-
-    for ax in (ax_stack, ax_box, ax_scatter):
-        ax.set_facecolor(BG)
-        ax.spines[["top", "right"]].set_visible(False)
-
-    # Pie axes are created later, after we know how many groups have data
-
-    # Collect all transport entries across both groups, tagged with group
-    all_transport = []
-    for gk in ("A", "B"):
-        for e in groups[gk]:
-            if e["csv_type"] == "transport":
-                all_transport.append((gk, e))
-
-    if not all_transport:
-        ax_stack.text(
-            0.5,
-            0.5,
-            "No transport data loaded.",
-            ha="center",
-            va="center",
-            transform=ax_stack.transAxes,
-            fontsize=13,
-        )
-        fig.tight_layout()
-        return fig
-
-    # ── Row 0: Stacked bar — mean phase time per experiment ──────────────────
-    bar_labels = []
-    bar_bottoms = np.zeros(len(all_transport))
-    phase_handles = {}
-
-    for ph_idx, ph in enumerate(PHASE_ORDER):
-        ph_means = []
-        for gk, e in all_transport:
-            arr = e["phase_splits"].get(ph, np.array([]))
-            ph_means.append(arr.mean() if len(arr) > 0 else 0.0)
-        ph_col = PHASE_COLOURS[ph]
-        bars = ax_stack.bar(
-            range(len(all_transport)),
-            ph_means,
-            bottom=bar_bottoms,
-            color=ph_col,
-            alpha=0.82,
-            label=ph.capitalize(),
-            edgecolor="white",
-            linewidth=0.6,
-        )
-        phase_handles[ph] = bars[0]
-        bar_bottoms += np.array(ph_means)
-
-    # Build x-axis labels, mark group boundary
-    x_labels = []
-    for gk, e in all_transport:
-        prefix = "A·" if gk == "A" else "B·"
-        x_labels.append(prefix + e["name"])
-
-    ax_stack.set_xticks(range(len(all_transport)))
-    ax_stack.set_xticklabels(x_labels, rotation=30, ha="right", fontsize=9)
-    ax_stack.set_ylabel("Mean Time per Phase (s)", fontsize=11)
-    ax_stack.set_title(
-        "Mean Phase Time per Experiment (stacked)", fontsize=12, fontweight="bold"
-    )
-    ax_stack.legend(
-        handles=list(phase_handles.values()),
-        labels=[ph.capitalize() for ph in PHASE_ORDER],
-        fontsize=9,
-        loc="upper right",
-    )
-    ax_stack.grid(axis="y", linestyle="--", alpha=0.4)
-
-    # Draw group-boundary separator line
-    n_a = sum(1 for gk, _ in all_transport if gk == "A")
-    if 0 < n_a < len(all_transport):
-        ax_stack.axvline(
-            n_a - 0.5, color="black", linewidth=1.2, linestyle="--", alpha=0.5
-        )
-        ax_stack.text(
-            n_a - 0.5,
-            ax_stack.get_ylim()[1] * 0.98,
-            f"← {ta}   {tb} →",
-            ha="center",
-            va="top",
-            fontsize=8,
-            color="black",
-        )
-
-    # ── Row 1: Pie charts — average phase-time proportions ───────────────────
-    # Build one pie per group (only transport entries), plus a combined pie.
-    pie_specs = []  # list of (title, {ph: mean_seconds})
+    # ── Gather per-group pie data ─────────────────────────────────────────────
+    pie_specs = []  # list of (group_key, title, {ph: mean_s}, total_s)
     for gk, label in [("A", ta), ("B", tb)]:
         t_entries = [e for e in groups[gk] if e["csv_type"] == "transport"]
         if not t_entries:
@@ -965,85 +850,129 @@ def build_phase_figure():
         means = {
             ph: splits[ph].mean() if len(splits[ph]) > 0 else 0.0 for ph in PHASE_ORDER
         }
-        if sum(means.values()) > 0:
-            pie_specs.append((label, means))
+        total = sum(means.values())
+        if total > 0:
+            pie_specs.append((gk, label, means, total))
 
-    # Combined pie (all transport entries regardless of group)
-    all_splits = {ph: [] for ph in PHASE_ORDER}
+    n_pies = len(pie_specs)  # 1 or 2
+
+    # ── Collect transport entries for the bottom row ──────────────────────────
+    all_transport = []
     for gk in ("A", "B"):
-        s = _pool_phase_splits(gk)
-        for ph in PHASE_ORDER:
-            if len(s[ph]):
-                all_splits[ph].extend(s[ph].tolist())
-    combined_means = {ph: np.mean(v) if v else 0.0 for ph, v in all_splits.items()}
-    if sum(combined_means.values()) > 0:
-        pie_specs.append(("Combined", combined_means))
+        for e in groups[gk]:
+            if e["csv_type"] == "transport":
+                all_transport.append((gk, e))
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    fig = plt.figure(figsize=(14, 12), num="Phase Analysis")
+    fig.suptitle("Transport Phase Analysis", fontsize=14, fontweight="bold")
+    fig.patch.set_facecolor(BG)
+
+    # Bottom two panels occupy the lower 42% of the figure
+    BOTTOM_TOP = 0.42  # top edge of bottom row (in figure coords)
+    BOTTOM_H = 0.30  # height of each bottom panel
+    BOTTOM_PAD = 0.06  # left/right padding
+
+    ax_box = fig.add_axes([BOTTOM_PAD, 0.07, 0.40, BOTTOM_H])
+    ax_scatter = fig.add_axes([BOTTOM_PAD + 0.50, 0.07, 0.40, BOTTOM_H])
+
+    for ax in (ax_box, ax_scatter):
+        ax.set_facecolor(BG)
+        ax.spines[["top", "right"]].set_visible(False)
+
+    if not pie_specs:
+        fig.text(
+            0.5,
+            0.72,
+            "No transport data loaded.",
+            ha="center",
+            va="center",
+            fontsize=13,
+        )
+        return fig
+
+    # ── Scaled pie sizing (figure coordinates) ────────────────────────────────
+    # Max pie gets a square axes of side MAX_S (figure fraction).
+    # Others are scaled by sqrt(total / max_total) so area ∝ duration.
+    max_total = max(spec[3] for spec in pie_specs)
+    MAX_S = 0.38  # side length of the largest pie axes (figure fraction)
+    MIN_S = 0.20  # floor so small pies are still readable
+
+    PIE_ROW_CY = 0.74  # vertical centre of pie row in figure coords
+
+    # Horizontal centres: evenly spaced across [0.15, 0.85]
+    if n_pies == 1:
+        centres_x = [0.50]
+    else:
+        centres_x = [0.25, 0.75]
 
     pie_colours = [PHASE_COLOURS[ph] for ph in PHASE_ORDER]
-    pie_explode = [0.03] * len(PHASE_ORDER)  # slight separation on every slice
+    pie_explode = [0.03] * len(PHASE_ORDER)
 
-    for pie_idx, (pie_title, means) in enumerate(pie_specs):
-        col_span = pie_cols // len(pie_specs) if len(pie_specs) <= pie_cols else 1
-        # Spread pies evenly; if only 1 spec, centre it
-        if len(pie_specs) == 1:
-            ax_pie = fig.add_subplot(gs[1, 1])
-        else:
-            ax_pie = fig.add_subplot(gs[1, pie_idx])
+    for pie_idx, (gk, pie_title, means, total) in enumerate(pie_specs):
+        side = MIN_S + (MAX_S - MIN_S) * np.sqrt(total / max_total)
+        cx = centres_x[pie_idx]
+        cy = PIE_ROW_CY
+        # [left, bottom, width, height] in figure fraction
+        rect = [cx - side / 2, cy - side / 2, side, side]
+        ax_pie = fig.add_axes(rect, aspect="equal")
+        ax_pie.set_facecolor(BG)
 
         values = [means[ph] for ph in PHASE_ORDER]
-        total = sum(values)
-        labels = [
-            (
-                f"{ph.capitalize()}\n{means[ph]:.2f}s\n({means[ph]/total*100:.1f}%)"
-                if total > 0
-                else ph.capitalize()
-            )
+        slice_labels = [
+            f"{ph.capitalize()}\n{means[ph]:.2f}s\n({means[ph]/total*100:.1f}%)"
             for ph in PHASE_ORDER
         ]
 
-        wedges, texts = ax_pie.pie(
+        wedges, _ = ax_pie.pie(
             values,
-            labels=labels,
+            labels=slice_labels,
             colors=pie_colours,
             explode=pie_explode,
             startangle=90,
             wedgeprops=dict(edgecolor="white", linewidth=1.6),
             textprops=dict(fontsize=8.5),
-            labeldistance=1.18,
+            labeldistance=1.22,
         )
         for w in wedges:
             w.set_alpha(0.88)
 
         ax_pie.set_title(
-            f"{pie_title}\nAvg phase breakdown  (total {total:.2f}s)",
+            f"{pie_title}\navg trial  {total:.2f}s",
             fontsize=10,
             fontweight="bold",
-            pad=10,
+            pad=8,
         )
 
-    # ── Row 2 left: Box-plots of per-trial phase times by group ──────────────
-    has_b_transport = any(gk == "B" for gk, _ in all_transport)
-    n_phase_groups = 2 if has_b_transport else 1
-    positions = []
-    box_data = []
-    tick_pos = []
-    tick_lbl = []
+    # Note when sizes differ
+    if n_pies == 2:
+        fig.text(
+            0.5,
+            BOTTOM_TOP + 0.01,
+            "Pie area ∝ average total trial duration",
+            ha="center",
+            fontsize=9,
+            color="#888888",
+            style="italic",
+        )
 
+    # ── Box-plots of per-trial phase times by group ───────────────────────────
+    has_b_transport = any(gk == "B" for gk, _ in all_transport)
     group_keys_present = ["A"] + (["B"] if has_b_transport else [])
     group_cols = {"A": PALETTE_A[0], "B": PALETTE_B[0]}
+    n_phase_groups = len(group_keys_present)
 
+    positions, box_data, tick_pos, tick_lbl = [], [], [], []
     spacing = n_phase_groups + 1
     for ph_idx, ph in enumerate(PHASE_ORDER):
         base = ph_idx * spacing
         tick_pos.append(base + (n_phase_groups - 1) / 2)
         tick_lbl.append(ph.capitalize())
         for gi, gk in enumerate(group_keys_present):
-            splits = _pool_phase_splits(gk)
-            arr = splits.get(ph, np.array([]))
+            arr = _pool_phase_splits(gk).get(ph, np.array([]))
             if len(arr) == 0:
                 arr = np.array([0.0])
-            pos = base + gi
-            positions.append(pos)
+            positions.append(base + gi)
             box_data.append(arr)
 
     bp = ax_box.boxplot(
@@ -1055,9 +984,8 @@ def build_phase_figure():
         whiskerprops=dict(linewidth=1.2),
         capprops=dict(linewidth=1.2),
     )
-    for i, (patch, pos) in enumerate(zip(bp["boxes"], positions)):
-        gk = group_keys_present[i % n_phase_groups]
-        patch.set_facecolor(group_cols[gk])
+    for i, patch in enumerate(bp["boxes"]):
+        patch.set_facecolor(group_cols[group_keys_present[i % n_phase_groups]])
         patch.set_alpha(0.65)
 
     ax_box.set_xticks(tick_pos)
@@ -1068,16 +996,17 @@ def build_phase_figure():
     )
     ax_box.grid(axis="y", linestyle="--", alpha=0.4)
 
-    # Legend for group colours
     from matplotlib.patches import Patch
 
-    legend_patches = [
-        Patch(facecolor=group_cols[gk], alpha=0.65, label=group_titles[gk])
-        for gk in group_keys_present
-    ]
-    ax_box.legend(handles=legend_patches, fontsize=9)
+    ax_box.legend(
+        handles=[
+            Patch(facecolor=group_cols[gk], alpha=0.65, label=group_titles[gk])
+            for gk in group_keys_present
+        ],
+        fontsize=9,
+    )
 
-    # ── Row 2 right: Scatter — dist_start_to_cube vs duration ───────────────
+    # ── Scatter: dist_start_to_cube vs duration ───────────────────────────────
     has_dist_data = any(len(e["dist_start_to_cube"]) > 0 for _, e in all_transport)
 
     if has_dist_data:
@@ -1107,19 +1036,16 @@ def build_phase_figure():
                 edgecolors="white",
                 linewidth=0.4,
             )
-            # Linear regression
             slope, intercept, r, p_val, _ = stats.linregress(d_arr, dur_arr)
             x_fit = np.linspace(d_arr.min(), d_arr.max(), 100)
-            sig_txt = "✓" if p_val < 0.05 else "✗"
             ax_scatter.plot(
                 x_fit * 100,
                 slope * x_fit + intercept,
                 color=col,
                 linewidth=1.8,
                 linestyle="--",
-                label=f"{lbl} fit  r={r:.2f} {sig_txt}",
+                label=f"{lbl} fit  r={r:.2f} {'✓' if p_val < 0.05 else '✗'}",
             )
-
         ax_scatter.set_xlabel("Distance: Start → Cube (cm)", fontsize=11)
         ax_scatter.set_ylabel("Trial Duration (s)", fontsize=11)
         ax_scatter.set_title(
@@ -1145,7 +1071,6 @@ def build_phase_figure():
             "Task Difficulty (no start-pos data)", fontsize=12, fontweight="bold"
         )
 
-    fig.tight_layout()
     return fig
 
 
