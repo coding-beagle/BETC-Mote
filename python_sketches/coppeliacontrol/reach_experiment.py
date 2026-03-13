@@ -4,10 +4,12 @@ reach_experiment.py
 Reusable experiment module for the YuMi joystick controller.
 
 Defines:
-  • ReachTarget         – a single spatial goal (sphere in sim + HUD feedback)
-  • Experiment          – orchestrates a sequence of ReachTargets, logs results
-  • TransportTrial      – a single pick-and-place task (grip cube → carry to zone)
-  • TransportExperiment – orchestrates a sequence of TransportTrials, logs results
+  • ReachTarget               – a single spatial goal (sphere in sim + HUD feedback)
+  • Experiment                – orchestrates a sequence of ReachTargets, logs results
+  • TransportTrial            – a single pick-and-place task (grip cube → carry to zone)
+  • TransportExperiment       – orchestrates a sequence of TransportTrials, logs results
+  • ObstacleTransportTrial    – TransportTrial with a cloud of spherical obstacles
+  • ObstacleTransportExperiment – orchestrates ObstacleTransportTrials, logs results
 
 Usage – reach experiment (unchanged):
     from reach_experiment import Experiment
@@ -30,6 +32,32 @@ Usage – transport experiment:
     # and the current start/resting position of the arm
     exp.update(wrist_pos, gripper_open, dt, start_pos=arm_start_pos)
     exp.draw(screen, wrist_pos, fonts, dt)
+
+Usage – obstacle transport experiment:
+    from reach_experiment import ObstacleTransportExperiment
+
+    obs_cfg = ObstacleConfig(
+        n_obstacles=12,          # number of spheres
+        radius_min=0.03,         # smallest sphere radius  (m)
+        radius_max=0.09,         # largest sphere radius   (m)
+        margin=0.12,             # keep-clear radius around cube & drop zone
+        seed=42,                 # set for reproducibility, None for random
+    )
+
+    exp = ObstacleTransportExperiment.from_random(
+        sim,
+        shoulder_pos=robot_shoulder_world,
+        arm_length=ROBOT_ARM_LENGTH,
+        n_trials=5,
+        obstacle_cfg=obs_cfg,
+    )
+
+    exp.update(wrist_pos, gripper_open, dt, start_pos=arm_start_pos)
+    exp.draw(screen, wrist_pos, fonts, dt)
+
+    # Obstacle config can be changed between trials:
+    exp.obstacle_cfg.n_obstacles = 20
+    exp.obstacle_cfg.radius_max  = 0.12
 """
 
 from __future__ import annotations
@@ -54,6 +82,8 @@ C_ORANGE = (230, 130, 40)  # cube / pick phase
 C_TEXT_DIM = (130, 130, 130)
 C_TEXT_BRT = (210, 210, 210)
 C_PANEL_BG = (22, 22, 28, 200)
+C_OBSTACLE = (180, 60, 60)  # resting obstacle colour
+C_OBSTACLE_HIT = (255, 40, 40)  # flash colour on collision
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1075,6 +1105,694 @@ class TransportExperiment:
         return "\n".join(lines)
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# ObstacleConfig  –  parameters for the spherical obstacle cloud
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class ObstacleConfig:
+    """
+    Controls the number, size, and placement of spherical obstacles scattered
+    through the reachable workspace.
+
+    All fields are mutable – you can change them between trials on a live
+    ObstacleTransportExperiment and the next spawned trial will pick up the
+    new values automatically.
+
+    Parameters
+    ----------
+    n_obstacles : int
+        How many spheres to scatter.  Default 10.
+    radius_min : float
+        Smallest allowable sphere radius in metres.  Default 0.03 m (3 cm).
+    radius_max : float
+        Largest allowable sphere radius in metres.  Default 0.08 m (8 cm).
+    margin : float
+        Keep-clear radius around the cube start position and the drop zone.
+        No obstacle centre will be placed within this distance of either
+        landmark.  Default 0.12 m.
+    seed : int | None
+        Random seed for reproducible obstacle layouts.  None = fully random.
+    penalty_on_hit : bool
+        If True, touching any obstacle adds ``penalty_seconds`` to the
+        trial's *reported* duration (does NOT affect the timeout clock).
+        Default False.
+    penalty_seconds : float
+        Seconds added per obstacle contact event.  Default 2.0.
+    collision_radius_scale : float
+        The collision sphere used for wrist–obstacle detection is the
+        obstacle's geometric radius multiplied by this factor.  Values < 1
+        give a smaller "hit zone" than the visual sphere; > 1 a larger one.
+        Default 1.0 (exact match).
+    """
+
+    n_obstacles: int = 10
+    radius_min: float = 0.03
+    radius_max: float = 0.08
+    margin: float = 0.12
+    seed: Optional[int] = None
+    penalty_on_hit: bool = False
+    penalty_seconds: float = 2.0
+    collision_radius_scale: float = 1.0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# _ObstacleSphere  –  single sphere managed inside a trial
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class _ObstacleSphere:
+    """Internal: one spherical obstacle in CoppeliaSim."""
+
+    # How long (seconds) the HUD flash lasts after a hit
+    HIT_FLASH_DURATION = 0.35
+
+    def __init__(self, sim, pos: List[float], radius: float, label: str):
+        self.sim = sim
+        self.pos = list(pos)
+        self.radius = radius
+        self._handle: Optional[int] = None
+        self._hit_flash: float = 0.0  # countdown timer
+        self._hit_count: int = 0  # cumulative contacts this trial
+        self._contact_active: bool = False  # True while wrist is inside sphere
+
+        self._handle = sim.createPrimitiveShape(
+            sim.primitiveshape_spheroid,
+            [radius * 2, radius * 2, radius * 2],
+            0,
+        )
+        if self._handle is None or self._handle < 0:
+            raise RuntimeError(
+                f"Failed to create obstacle sphere (handle={self._handle})"
+            )
+        sim.setObjectPosition(self._handle, pos)
+        sim.setObjectAlias(self._handle, label)
+        # Static + non-respondable so it can't physically push anything
+        sim.setObjectInt32Param(self._handle, sim.shapeintparam_static, 1)
+
+    def remove(self):
+        if self._handle is not None:
+            try:
+                self.sim.removeObject(self._handle)
+            except Exception:
+                pass
+            self._handle = None
+
+    def check_collision(
+        self,
+        wrist_pos: List[float],
+        collision_radius_scale: float = 1.0,
+        dt: float = 0.0,
+    ) -> bool:
+        """
+        Returns True on the *leading edge* of a new collision event (wrist
+        enters the sphere).  Stays False while the wrist is already inside
+        (contact_active) and resets when it exits.
+
+        Also ticks down the HUD flash timer.
+        """
+        self._hit_flash = max(0.0, self._hit_flash - dt)
+
+        dist = math.sqrt(sum((wrist_pos[i] - self.pos[i]) ** 2 for i in range(3)))
+        effective_r = self.radius * collision_radius_scale
+        inside = dist <= effective_r
+
+        new_hit = False
+        if inside and not self._contact_active:
+            # Leading edge – count a new hit
+            self._contact_active = True
+            self._hit_count += 1
+            self._hit_flash = self.HIT_FLASH_DURATION
+            new_hit = True
+        elif not inside:
+            self._contact_active = False
+
+        return new_hit
+
+    @property
+    def is_flashing(self) -> bool:
+        return self._hit_flash > 0.0
+
+    @property
+    def hit_count(self) -> int:
+        return self._hit_count
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ObstacleTransportTrial
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class ObstacleTransportTrial(TransportTrial):
+    """
+    A TransportTrial augmented with a cloud of spherical obstacles.
+
+    The obstacles are static, non-respondable spheres scattered through the
+    workspace.  The trial logic (phases, gripper, timing) is identical to
+    TransportTrial; this subclass layers on:
+
+      • Collision detection  – wrist enters an obstacle sphere → hit event
+      • Penalty accounting   – optional time penalty added to reported duration
+      • Hit statistics        – per-obstacle and aggregate counts logged in results
+      • HUD additions         – obstacle count badge + per-hit flash overlay
+
+    Parameters
+    ----------
+    obstacle_cfg : ObstacleConfig
+        Configuration dataclass controlling cloud density, size range, etc.
+    shoulder_pos : list[float]
+        World-space shoulder position used to sample obstacle positions from
+        the same hemisphere as cube/drop locations.
+    arm_length : float
+        Used with shoulder_pos to bound the sampling volume.
+    """
+
+    def __init__(
+        self,
+        sim,
+        cube_pos: List[float],
+        drop_pos: List[float],
+        obstacle_cfg: ObstacleConfig,
+        shoulder_pos: List[float],
+        arm_length: float,
+        pick_radius: float = 0.06,
+        drop_radius: float = 0.06,
+        timeout: float = 30.0,
+        label: str = "Obstacle Transport",
+        start_pos: Optional[List[float]] = None,
+    ):
+        # Initialise the base trial (spawns cube + drop zone dummy)
+        super().__init__(
+            sim=sim,
+            cube_pos=cube_pos,
+            drop_pos=drop_pos,
+            pick_radius=pick_radius,
+            drop_radius=drop_radius,
+            timeout=timeout,
+            label=label,
+            start_pos=start_pos,
+        )
+
+        self._obstacle_cfg = obstacle_cfg
+        self._shoulder_pos = list(shoulder_pos)
+        self._arm_length = arm_length
+
+        # Collision counters
+        self._total_hits: int = 0
+        self._penalty_accumulated: float = 0.0
+
+        # Spawn obstacle spheres
+        self._obstacles: List[_ObstacleSphere] = []
+        self._spawn_obstacles()
+
+    # ── obstacle placement ────────────────────────────────────────────────────
+
+    def _spawn_obstacles(self):
+        """
+        Sample n_obstacles positions in the reachable hemisphere, rejecting
+        any that land within cfg.margin of the cube or drop zone.
+        """
+        cfg = self._obstacle_cfg
+        rng = random.Random(cfg.seed)
+
+        # Generate a generous pool and filter
+        pool_size = cfg.n_obstacles * 8
+        candidates = sample_hemisphere_positions(
+            shoulder=self._shoulder_pos,
+            arm_length=self._arm_length,
+            n=pool_size,
+            min_reach=0.3,
+            max_reach=0.90,
+            min_elevation=-20.0,
+            max_elevation=70.0,
+            seed=cfg.seed,
+        )
+        rng.shuffle(candidates)
+
+        placed = 0
+        for pos in candidates:
+            if placed >= cfg.n_obstacles:
+                break
+            # Reject if too close to cube or drop zone
+            d_cube = math.sqrt(sum((pos[i] - self.cube_pos[i]) ** 2 for i in range(3)))
+            d_drop = math.sqrt(sum((pos[i] - self.drop_pos[i]) ** 2 for i in range(3)))
+            if d_cube < cfg.margin or d_drop < cfg.margin:
+                continue
+
+            radius = rng.uniform(cfg.radius_min, cfg.radius_max)
+            sphere = _ObstacleSphere(
+                sim=self.sim,
+                pos=pos,
+                radius=radius,
+                label=f"{self.label}_obs{placed}",
+            )
+            self._obstacles.append(sphere)
+            placed += 1
+
+    # ── overridden _remove_all ────────────────────────────────────────────────
+
+    def _remove_all(self):
+        """Remove cube, drop zone dummy, AND all obstacle spheres."""
+        super()._remove_all()
+        for obs in self._obstacles:
+            obs.remove()
+        self._obstacles.clear()
+
+    # ── overridden update ─────────────────────────────────────────────────────
+
+    def update(
+        self,
+        wrist_pos: List[float],
+        gripper_open: bool,
+        dt: float,
+    ) -> Optional[str]:
+        """
+        Extends TransportTrial.update() with per-frame obstacle collision checks.
+        """
+        # Run base phase logic first
+        result = super().update(wrist_pos, gripper_open, dt)
+
+        # Only check obstacles while the trial is still running
+        if self._result is None or (self._result is not None and self._flash_t > 0):
+            cfg = self._obstacle_cfg
+            for obs in self._obstacles:
+                new_hit = obs.check_collision(
+                    wrist_pos,
+                    collision_radius_scale=cfg.collision_radius_scale,
+                    dt=dt,
+                )
+                if new_hit:
+                    self._total_hits += 1
+                    if cfg.penalty_on_hit:
+                        self._penalty_accumulated += cfg.penalty_seconds
+
+        return result
+
+    # ── extra properties ──────────────────────────────────────────────────────
+
+    @property
+    def total_hits(self) -> int:
+        """Total number of distinct obstacle contact events this trial."""
+        return self._total_hits
+
+    @property
+    def penalty_accumulated(self) -> float:
+        """Total penalty seconds accumulated (0 if penalty_on_hit is False)."""
+        return self._penalty_accumulated
+
+    @property
+    def adjusted_duration(self) -> float:
+        """
+        Elapsed time + any accumulated penalty.  Used as the headline metric
+        in the results dict when penalty_on_hit is True.
+        """
+        return self._elapsed + self._penalty_accumulated
+
+    # ── overridden draw ───────────────────────────────────────────────────────
+
+    def draw(
+        self,
+        surf: pygame.Surface,
+        wrist_pos: List[float],
+        fonts: dict,
+        dt: float = 0.0,
+    ):
+        W, H = surf.get_size()
+
+        # ── obstacle hit flash (brief red edge pulse) ─────────────────────────
+        any_flashing = any(obs.is_flashing for obs in self._obstacles)
+        if any_flashing and self._result is None:
+            flash_frac = max(
+                obs._hit_flash / _ObstacleSphere.HIT_FLASH_DURATION
+                for obs in self._obstacles
+                if obs.is_flashing
+            )
+            alpha = int(90 * flash_frac)
+            flash_surf = pygame.Surface((W, H), pygame.SRCALPHA)
+            flash_surf.fill((*C_OBSTACLE_HIT, alpha))
+            surf.blit(flash_surf, (0, 0))
+
+        # ── base HUD (phase panel, phase bars, dot row, distances) ───────────
+        super().draw(surf, wrist_pos, fonts, dt)
+
+        if self.finished and self._flash_t <= 0:
+            return
+
+        # ── obstacle info badge (top-right corner, above main panel) ─────────
+        badge_w, badge_h = 310, 52
+        # Align with the main transport panel (same px)
+        panel_w = 310
+        bx = W - panel_w - 10
+        by = 210 - badge_h - 6  # sit just above the main panel
+
+        badge = pygame.Surface((badge_w, badge_h), pygame.SRCALPHA)
+        badge.fill((22, 22, 28, 190))
+        surf.blit(badge, (bx, by))
+
+        hit_col = C_FAIL if self._total_hits > 0 else C_TEXT_DIM
+        pygame.draw.rect(surf, hit_col, (bx, by, badge_w, badge_h), 1)
+
+        n_obs = len(self._obstacles)
+        obs_txt = fonts["sm"].render(
+            f"obstacles: {n_obs}  |  hits: {self._total_hits}", True, hit_col
+        )
+        surf.blit(obs_txt, (bx + 10, by + 8))
+
+        if self._obstacle_cfg.penalty_on_hit and self._penalty_accumulated > 0:
+            pen_txt = fonts["sm"].render(
+                f"+{self._penalty_accumulated:.1f}s penalty", True, C_FAIL
+            )
+            surf.blit(pen_txt, (bx + 10, by + 26))
+        elif self._total_hits == 0:
+            clean_txt = fonts["sm"].render("clean path so far ✓", True, C_HOT)
+            surf.blit(clean_txt, (bx + 10, by + 26))
+        else:
+            hit_detail = fonts["sm"].render(
+                f"contact events this trial", True, C_TEXT_DIM
+            )
+            surf.blit(hit_detail, (bx + 10, by + 26))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ObstacleTransportExperiment
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class ObstacleTransportExperiment:
+    """
+    Orchestrates a sequence of ObstacleTransportTrials.
+
+    Usage
+    -----
+    ::
+
+        obs_cfg = ObstacleConfig(n_obstacles=12, radius_min=0.03, radius_max=0.09)
+
+        exp = ObstacleTransportExperiment.from_random(
+            sim,
+            shoulder_pos=robot_shoulder_world,
+            arm_length=ROBOT_ARM_LENGTH,
+            n_trials=5,
+            obstacle_cfg=obs_cfg,
+        )
+
+        # game loop
+        exp.update(wrist_pos, gripper_open, dt, start_pos=arm_start)
+        exp.draw(screen, wrist_pos, fonts, dt)
+
+        # tweak difficulty mid-experiment (takes effect on next trial):
+        exp.obstacle_cfg.n_obstacles = 20
+        exp.obstacle_cfg.radius_max  = 0.12
+
+    Parameters
+    ----------
+    sim
+        CoppeliaSim sim handle.
+    trials : list[dict]
+        Each dict must contain:
+          ``cube_pos``, ``drop_pos``, ``shoulder_pos``, ``arm_length``
+        and may optionally contain:
+          ``pick_radius``, ``drop_radius``, ``timeout``, ``label``
+    obstacle_cfg : ObstacleConfig
+        Shared configuration; mutate between trials to change difficulty.
+    start_pos : list[float] | None
+        Default arm rest position for difficulty metrics.
+    """
+
+    def __init__(
+        self,
+        sim,
+        trials: List[dict],
+        obstacle_cfg: ObstacleConfig,
+        start_pos: Optional[List[float]] = None,
+    ):
+        self.sim = sim
+        self._trial_defs = trials
+        self.obstacle_cfg = obstacle_cfg  # public – callers may mutate
+        self._default_start_pos = list(start_pos) if start_pos else None
+        self._index = 0
+        self._results: List[dict] = []
+        self._active: Optional[ObstacleTransportTrial] = None
+        self._start_time = time.time()
+        self._trial_start = time.time()
+        self._result_logged = False
+        self._spawn_next()
+
+    # ── factory ───────────────────────────────────────────────────────────────
+
+    @classmethod
+    def from_random(
+        cls,
+        sim,
+        shoulder_pos: List[float],
+        arm_length: float,
+        n_trials: int = 5,
+        obstacle_cfg: Optional[ObstacleConfig] = None,
+        pick_radius: float = 0.06,
+        drop_radius: float = 0.06,
+        timeout: float = 45.0,
+        min_reach: float = 0.5,
+        max_reach: float = 0.80,
+        min_elevation: float = -15.0,
+        max_elevation: float = 45.0,
+        az_min: float = -45.0,
+        az_max: float = 45.0,
+        az_centre: float = -90.0,
+        seed: int = None,
+        start_pos: Optional[List[float]] = None,
+    ) -> "ObstacleTransportExperiment":
+        """
+        Generate n_trials obstacle transport tasks with cube and drop positions
+        sampled from the reachable hemisphere.
+
+        Parameters
+        ----------
+        obstacle_cfg : ObstacleConfig | None
+            Obstacle cloud configuration.  If None, a default ObstacleConfig()
+            is used (10 obstacles, 3–8 cm radius).
+        seed : int | None
+            Controls both the cube/drop position sampling AND (if
+            obstacle_cfg.seed is None) the obstacle placement.
+        """
+        if obstacle_cfg is None:
+            obstacle_cfg = ObstacleConfig()
+
+        rng = random.Random(seed)
+        all_pos = sample_hemisphere_positions(
+            shoulder=shoulder_pos,
+            arm_length=arm_length,
+            n=n_trials * 2,
+            min_reach=min_reach,
+            max_reach=max_reach,
+            min_elevation=min_elevation,
+            max_elevation=max_elevation,
+            az_min=az_min,
+            az_max=az_max,
+            az_centre=az_centre,
+            seed=seed,
+        )
+        rng.shuffle(all_pos)
+
+        trials = []
+        for i in range(n_trials):
+            cube_pos = all_pos[i * 2]
+            drop_pos = all_pos[i * 2 + 1]
+            trials.append(
+                {
+                    "cube_pos": cube_pos,
+                    "drop_pos": drop_pos,
+                    "shoulder_pos": shoulder_pos,
+                    "arm_length": arm_length,
+                    "pick_radius": pick_radius,
+                    "drop_radius": drop_radius,
+                    "timeout": timeout,
+                    "label": f"Obs-Transport {i+1}",
+                }
+            )
+        return cls(sim, trials, obstacle_cfg=obstacle_cfg, start_pos=start_pos)
+
+    # ── spawn ─────────────────────────────────────────────────────────────────
+
+    def _spawn_next(self, start_pos: Optional[List[float]] = None):
+        if self._index >= len(self._trial_defs):
+            self._active = None
+            return
+        cfg = self._trial_defs[self._index]
+        sp = start_pos or self._default_start_pos
+
+        # Each new trial takes a snapshot of obstacle_cfg so mid-trial changes
+        # do not affect the currently running trial.
+        import copy
+
+        cfg_snapshot = copy.copy(self.obstacle_cfg)
+        # Give each trial a distinct seed derived from the experiment seed so
+        # obstacle layouts differ per trial (but are still reproducible).
+        if cfg_snapshot.seed is not None:
+            cfg_snapshot.seed = cfg_snapshot.seed + self._index * 1000
+
+        self._active = ObstacleTransportTrial(
+            sim=self.sim,
+            cube_pos=cfg["cube_pos"],
+            drop_pos=cfg["drop_pos"],
+            obstacle_cfg=cfg_snapshot,
+            shoulder_pos=cfg["shoulder_pos"],
+            arm_length=cfg["arm_length"],
+            pick_radius=cfg.get("pick_radius", 0.06),
+            drop_radius=cfg.get("drop_radius", 0.06),
+            timeout=cfg.get("timeout", 45.0),
+            label=cfg.get("label", f"Obs-Transport {self._index + 1}"),
+            start_pos=sp,
+        )
+        self._trial_start = time.time()
+
+    # ── update ────────────────────────────────────────────────────────────────
+
+    def update(
+        self,
+        wrist_pos: List[float],
+        gripper_open: bool,
+        dt: float,
+        start_pos: Optional[List[float]] = None,
+    ):
+        """
+        Call every sim step.
+
+        Parameters
+        ----------
+        wrist_pos    : current world-space wrist position
+        gripper_open : True = open / False = closed
+        dt           : seconds since last call
+        start_pos    : optional arm rest position for the *next* trial
+        """
+        if self._active is None:
+            return
+
+        result = self._active.update(wrist_pos, gripper_open, dt)
+
+        if result is not None and not self._result_logged:
+            self._result_logged = True
+            trial = self._active
+            self._results.append(
+                {
+                    "trial": self._index + 1,
+                    "label": trial.label,
+                    "result": result,
+                    "duration": time.time() - self._trial_start,
+                    "adjusted_duration": trial.adjusted_duration,
+                    "phase_splits": trial.phase_splits,
+                    "total_hits": trial.total_hits,
+                    "penalty_accumulated": trial.penalty_accumulated,
+                    "n_obstacles": len(trial._obstacles),
+                    "cube_pos": self._trial_defs[self._index]["cube_pos"],
+                    "drop_pos": self._trial_defs[self._index]["drop_pos"],
+                    "start_pos": trial._start_pos,
+                    "dist_start_to_cube": trial.dist_start_to_cube,
+                    "dist_start_to_drop": trial.dist_start_to_drop,
+                }
+            )
+            self._index += 1
+            self._pending_start_pos = start_pos or wrist_pos
+
+        self._maybe_advance(start_pos=start_pos)
+
+    def _maybe_advance(self, start_pos: Optional[List[float]] = None):
+        if (
+            self._active is not None
+            and self._active.finished
+            and self._active._flash_t <= 0
+        ):
+            self._result_logged = False
+            sp = start_pos or getattr(self, "_pending_start_pos", None)
+            self._spawn_next(start_pos=sp)
+
+    # ── draw ──────────────────────────────────────────────────────────────────
+
+    def draw(
+        self,
+        surf: pygame.Surface,
+        wrist_pos: List[float],
+        fonts: dict,
+        dt: float = 0.0,
+    ):
+        self._maybe_advance()
+        W, H = surf.get_size()
+        total = len(self._trial_defs)
+        done = len(self._results)
+        bar_w = W - 20
+
+        pygame.draw.rect(surf, (45, 45, 55), (10, H - 18, bar_w, 8))
+        if total:
+            filled = int(bar_w * done / total)
+            pygame.draw.rect(surf, C_SUCCESS, (10, H - 18, filled, 8))
+
+        prog_txt = fonts["sm"].render(
+            f"obs-transport {min(done+1, total)} / {total}  ·  "
+            + (f"{done} done" if done else ""),
+            True,
+            C_TEXT_DIM,
+        )
+        surf.blit(prog_txt, (10, H - 34))
+
+        if self._active is not None:
+            self._active.draw(surf, wrist_pos, fonts, dt)
+
+        if self.finished:
+            _draw_summary(
+                surf,
+                self._results,
+                fonts,
+                title="OBSTACLE TRANSPORT COMPLETE",
+                extra_col="total_hits",
+                extra_label="hits",
+            )
+
+    # ── properties ────────────────────────────────────────────────────────────
+
+    @property
+    def finished(self) -> bool:
+        return self._active is None and self._index >= len(self._trial_defs)
+
+    @property
+    def results(self) -> List[dict]:
+        return list(self._results)
+
+    def summary(self) -> str:
+        lines = ["─── Obstacle Transport Experiment Results ───"]
+        for r in self._results:
+            sp = r.get("phase_splits", {})
+            d2c = r.get("dist_start_to_cube")
+            d2d = r.get("dist_start_to_drop")
+            hits = r.get("total_hits", 0)
+            penalty = r.get("penalty_accumulated", 0.0)
+            adj = r.get("adjusted_duration", r["duration"])
+            dist_info = (
+                f"  start→cube {d2c*100:.0f}cm  start→drop {d2d*100:.0f}cm"
+                if d2c is not None
+                else ""
+            )
+            splits_str = "  splits: " + "  ".join(
+                f"{ph[:4]}={sp.get(ph, 0.0):.2f}s" for ph in _ALL_PHASES
+            )
+            penalty_str = f"  +{penalty:.1f}s penalty" if penalty > 0 else "  clean"
+            lines.append(
+                f"  {r['trial']:2d}. {r['label']:26s}  "
+                f"{r['result']:8s}  {r['duration']:.2f}s  "
+                f"(adj {adj:.2f}s)  hits={hits}"
+            )
+            if dist_info:
+                lines.append(dist_info)
+            lines.append(splits_str + penalty_str)
+        n_ok = sum(1 for r in self._results if r["result"] == "success")
+        total_hits = sum(r.get("total_hits", 0) for r in self._results)
+        lines.append(
+            f"\n  {n_ok}/{len(self._results)} delivered  "
+            f"| {total_hits} total obstacle hits  "
+            f"| total {time.time()-self._start_time:.1f}s"
+        )
+        return "\n".join(lines)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Drawing utilities (private)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1097,6 +1815,8 @@ def _draw_summary(
     results: List[dict],
     fonts: dict,
     title: str = "EXPERIMENT COMPLETE",
+    extra_col: Optional[str] = None,
+    extra_label: Optional[str] = None,
 ):
     W, H = surf.get_size()
     overlay = pygame.Surface((W, H), pygame.SRCALPHA)
@@ -1118,9 +1838,13 @@ def _draw_summary(
         splits_str = " | ".join(
             f"{ph[:4]} {sp.get(ph, 0.0):.1f}s" for ph in _ALL_PHASES
         )
+        extra = ""
+        if extra_col and extra_label:
+            val = r.get(extra_col, 0)
+            extra = f"  {extra_label}={val}"
         txt = (
-            f"  {r['trial']:2d}.  {r['label']:20s}  "
-            f"{r['result']:8s}  {r['duration']:.2f}s  [{splits_str}]"
+            f"  {r['trial']:2d}.  {r['label']:24s}  "
+            f"{r['result']:8s}  {r['duration']:.2f}s  [{splits_str}]{extra}"
         )
         lbl = fonts["sm"].render(txt, True, col)
         surf.blit(lbl, (W // 2 - lbl.get_width() // 2, 135 + i * 22))

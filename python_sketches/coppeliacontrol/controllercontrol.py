@@ -5,7 +5,12 @@ from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
 import csv
 import datetime
-from reach_experiment import Experiment, TransportExperiment
+from reach_experiment import (
+    Experiment,
+    TransportExperiment,
+    ObstacleTransportExperiment,
+    ObstacleConfig,
+)
 
 # ── constants ────────────────────────────────────────────────────────────────
 ROBOT_ARM_LENGTH = 0.21492 + 0.24129
@@ -46,9 +51,10 @@ BUTTON_LAYOUT = {
 }
 
 # ── experiment type ───────────────────────────────────────────────────────────
-# Set to "reach" for the standard reach-to-target experiment, or
-# "transport" for the pick-and-place cube transport experiment.
-EXP_TYPE = "transport"  # "reach"  |  "transport"
+# Set to "reach"     – standard reach-to-target experiment
+#        "transport" – pick-and-place cube transport
+#        "obstacle"  – pick-and-place with spherical obstacle cloud
+EXP_TYPE = "transport"  # "reach" | "transport" | "obstacle"
 
 # ── reach experiment configuration ───────────────────────────────────────────
 EXP_N_TRIALS = 10
@@ -75,6 +81,28 @@ TRN_MAX_ELEVATION = 50.0
 TRN_AZ_MIN = 20.0
 TRN_AZ_MAX = 90.0
 TRN_SEED = None  # set an int for reproducible positions
+
+# ── obstacle transport experiment configuration ───────────────────────────────
+OBS_N_TRIALS = 10
+OBS_PICK_RADIUS = 0.06
+OBS_DROP_RADIUS = 0.06
+OBS_TIMEOUT = 60.0
+OBS_MIN_REACH = 0.8
+OBS_MAX_REACH = 0.9
+OBS_MIN_ELEVATION = -35.0
+OBS_MAX_ELEVATION = 50.0
+OBS_AZ_MIN = 20.0
+OBS_AZ_MAX = 90.0
+OBS_SEED = None  # set an int for reproducible positions + obstacle layout
+
+# ObstacleConfig fields – edit these to change the obstacle cloud:
+OBS_N_OBSTACLES = 10  # number of spherical obstacles
+OBS_RADIUS_MIN = 0.03  # smallest sphere radius (m)
+OBS_RADIUS_MAX = 0.08  # largest sphere radius (m)
+OBS_MARGIN = 0.12  # keep-clear radius around cube & drop zone (m)
+OBS_PENALTY_ON_HIT = False  # add time penalty to reported duration on each hit
+OBS_PENALTY_SECONDS = 2.0  # seconds added per obstacle contact event
+OBS_COLLISION_SCALE = 1.0  # hit-zone scale vs visual sphere radius
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -179,6 +207,29 @@ rightGripperObject = sim.getObject(
     "/rightJoint3/rightLink3/rightJoint4/rightLink4"
     "/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7/rightLink7/rightConnector/YuMiGripper/centerJoint/leftFinger"
 )
+
+# ── joint handles for kinematics logging ──────────────────────────────────────
+# All 7 joints of the right arm, in proximal→distal order.
+joint_handles = [
+    sim.getObject("/rightJoint1"),
+    sim.getObject("/rightJoint1/rightLink1/rightJoint2"),
+    sim.getObject("/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3"),
+    sim.getObject(
+        "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4"
+    ),
+    sim.getObject(
+        "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5"
+    ),
+    sim.getObject(
+        "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5/rightLink5/rightJoint6"
+    ),
+    sim.getObject(
+        "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7"
+    ),
+]
+N_JOINTS = len(joint_handles)
+print(f"Tracking {N_JOINTS} joints for kinematics logging.")
+
 simIndex = 0
 simObject = 0
 
@@ -251,6 +302,10 @@ clock = pygame.time.Clock()
 
 fonts = {"sm": font_sm, "md": font_md, "lg": font_lg}
 
+# ── kinematics buffer ─────────────────────────────────────────────────────────
+# One row appended per sim.step() call; written to CSV in the finally block.
+kinematics_buffer = []
+
 try:
     print("Starting simulation...")
     sim.setStepping(True)
@@ -260,7 +315,42 @@ try:
     print(f"Experiment type: {EXP_TYPE}")
 
     # ── create experiment ─────────────────────────────────────────────────────
-    if EXP_TYPE == "transport":
+    if EXP_TYPE == "obstacle":
+        obs_cfg = ObstacleConfig(
+            n_obstacles=OBS_N_OBSTACLES,
+            radius_min=OBS_RADIUS_MIN,
+            radius_max=OBS_RADIUS_MAX,
+            margin=OBS_MARGIN,
+            seed=OBS_SEED,
+            penalty_on_hit=OBS_PENALTY_ON_HIT,
+            penalty_seconds=OBS_PENALTY_SECONDS,
+            collision_radius_scale=OBS_COLLISION_SCALE,
+        )
+        experiment = ObstacleTransportExperiment.from_random(
+            sim,
+            shoulder_pos=robot_shoulder_world,
+            arm_length=ROBOT_ARM_LENGTH,
+            n_trials=OBS_N_TRIALS,
+            obstacle_cfg=obs_cfg,
+            pick_radius=OBS_PICK_RADIUS,
+            drop_radius=OBS_DROP_RADIUS,
+            timeout=OBS_TIMEOUT,
+            min_reach=OBS_MIN_REACH,
+            max_reach=OBS_MAX_REACH,
+            min_elevation=OBS_MIN_ELEVATION,
+            max_elevation=OBS_MAX_ELEVATION,
+            az_min=OBS_AZ_MIN,
+            az_max=OBS_AZ_MAX,
+            seed=OBS_SEED,
+            start_pos=target_pos,
+        )
+        print(
+            f"Obstacle transport experiment created — {OBS_N_TRIALS} trials, {OBS_N_OBSTACLES} obstacles each."
+        )
+        for i, t in enumerate(experiment._trial_defs):
+            print(f"  {i+1}. cube={t['cube_pos']}  drop={t['drop_pos']}")
+
+    elif EXP_TYPE == "transport":
         experiment = TransportExperiment.from_random(
             sim,
             shoulder_pos=robot_shoulder_world,
@@ -281,6 +371,7 @@ try:
         print(f"Transport experiment created — {TRN_N_TRIALS} pick-and-place trials.")
         for i, t in enumerate(experiment._trial_defs):
             print(f"  {i+1}. cube={t['cube_pos']}  drop={t['drop_pos']}")
+
     else:
         experiment = Experiment.from_hemisphere(
             sim,
@@ -397,7 +488,7 @@ try:
         wrist_pos = sim.getObjectPosition(rightGripperObject, -1)
 
         # ── update experiment ─────────────────────────────────────────────────
-        if EXP_TYPE == "transport":
+        if EXP_TYPE in ("transport", "obstacle"):
             experiment.update(wrist_pos, gripper_open, dt)
         else:
             experiment.update(wrist_pos, dt)
@@ -406,6 +497,39 @@ try:
         if experiment.finished and not getattr(experiment, "_summary_printed", False):
             print(experiment.summary())
             experiment._summary_printed = True
+
+        # ── sample joint angles + kinematics row ──────────────────────────────
+        # Logged once per sim.step() so the cadence matches the physics.
+        joint_angles_rad = [sim.getJointPosition(h) for h in joint_handles]
+
+        # Determine current trial index and phase for context columns.
+        trial_idx = getattr(experiment, "_index", 0)
+        active = getattr(experiment, "_active", None)
+        phase = getattr(active, "_phase", "") if active is not None else "done"
+
+        # Obstacle hits so far this trial (0 for non-obstacle experiments).
+        hits_so_far = getattr(active, "_total_hits", 0) if active is not None else 0
+
+        kinematics_buffer.append(
+            {
+                "sim_time": round(sim.getSimulationTime(), 4),
+                "trial": trial_idx,
+                "phase": phase,
+                "gripper_open": int(gripper_open),
+                "wrist_x": round(wrist_pos[0], 5),
+                "wrist_y": round(wrist_pos[1], 5),
+                "wrist_z": round(wrist_pos[2], 5),
+                **{
+                    f"j{i+1}_rad": round(joint_angles_rad[i], 6)
+                    for i in range(N_JOINTS)
+                },
+                **{
+                    f"j{i+1}_deg": round(joint_angles_rad[i] * 180.0 / pi, 4)
+                    for i in range(N_JOINTS)
+                },
+                "obstacle_hits": hits_so_far,
+            }
+        )
 
         # ── draw ──────────────────────────────────────────────────────────────
         screen.fill((22, 22, 28))
@@ -422,8 +546,12 @@ try:
         screen.blit(font_sm.render(hint_label, True, (130, 130, 130)), (10, 32))
 
         # Experiment type badge
-        badge_txt = "TRANSPORT" if EXP_TYPE == "transport" else "REACH"
-        badge_col = (230, 130, 40) if EXP_TYPE == "transport" else (100, 160, 220)
+        badge_map = {
+            "transport": ("TRANSPORT", (230, 130, 40)),
+            "obstacle": ("OBS-TRANSPORT", (200, 80, 80)),
+            "reach": ("REACH", (100, 160, 220)),
+        }
+        badge_txt, badge_col = badge_map.get(EXP_TYPE, ("REACH", (100, 160, 220)))
         screen.blit(font_sm.render(f"[ {badge_txt} EXP ]", True, badge_col), (10, 52))
 
         ls_col = COL_ROTATION if rotation_mode else COL_POSITION
@@ -457,15 +585,17 @@ finally:
     pygame.quit()
     print("Simulation stopped.")
 
-    # ── Save results to CSV ───────────────────────────────────────────────────
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    exp_tag = EXP_TYPE  # "reach" | "transport" | "obstacle"
+    results_dir = f"controller{exp_tag.capitalize()}Results"
+
+    # ── Save trial results CSV ────────────────────────────────────────────────
     results = experiment.results if "experiment" in dir() else []
     if results:
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        exp_tag = "transport" if EXP_TYPE == "transport" else "reach"
+        results_filename = f"{results_dir}/{exp_tag}_results_{ts}.csv"
 
-        filename = f"controller{exp_tag.capitalize()}Results/{exp_tag}_results_{ts}.csv"
-
-        if EXP_TYPE == "transport":
+        if EXP_TYPE in ("transport", "obstacle"):
+            # Base fieldnames shared by transport + obstacle
             fieldnames = [
                 "trial",
                 "label",
@@ -487,8 +617,17 @@ finally:
                 "phase_carry_s",
                 "phase_place_s",
             ]
+            # Obstacle-only extra columns
+            if EXP_TYPE == "obstacle":
+                fieldnames += [
+                    "n_obstacles",
+                    "total_hits",
+                    "penalty_accumulated_s",
+                    "adjusted_duration_s",
+                ]
+
             trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
-            with open(filename, "w", newline="") as f:
+            with open(results_filename, "w", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 for r in results:
@@ -496,46 +635,47 @@ finally:
                     dp = trial_defs.get(r["trial"], {}).get("drop_pos", [None] * 3)
                     sp = r.get("phase_splits", {})
                     spos = r.get("start_pos") or [None, None, None]
-                    writer.writerow(
-                        {
-                            "trial": r["trial"],
-                            "label": r["label"],
-                            "result": r["result"],
-                            "duration_s": round(r["duration"], 3),
-                            "cube_x": round(cp[0], 4) if cp[0] is not None else "",
-                            "cube_y": round(cp[1], 4) if cp[1] is not None else "",
-                            "cube_z": round(cp[2], 4) if cp[2] is not None else "",
-                            "drop_x": round(dp[0], 4) if dp[0] is not None else "",
-                            "drop_y": round(dp[1], 4) if dp[1] is not None else "",
-                            "drop_z": round(dp[2], 4) if dp[2] is not None else "",
-                            "start_x": (
-                                round(spos[0], 4) if spos[0] is not None else ""
-                            ),  # ← add
-                            "start_y": (
-                                round(spos[1], 4) if spos[1] is not None else ""
-                            ),  # ← add
-                            "start_z": (
-                                round(spos[2], 4) if spos[2] is not None else ""
-                            ),  # ← add
-                            "dist_start_to_cube": (
-                                round(r["dist_start_to_cube"], 4)
-                                if r.get("dist_start_to_cube") is not None
-                                else ""
-                            ),  # ← add
-                            "dist_start_to_drop": (
-                                round(r["dist_start_to_drop"], 4)
-                                if r.get("dist_start_to_drop") is not None
-                                else ""
-                            ),  # ← add
-                            "phase_approach_s": round(
-                                sp.get("approach", 0.0), 3
-                            ),  # ← add
-                            "phase_grip_s": round(sp.get("grip", 0.0), 3),  # ← add
-                            "phase_carry_s": round(sp.get("carry", 0.0), 3),  # ← add
-                            "phase_place_s": round(sp.get("place", 0.0), 3),  # ← add
-                        }
-                    )
-        else:
+                    row = {
+                        "trial": r["trial"],
+                        "label": r["label"],
+                        "result": r["result"],
+                        "duration_s": round(r["duration"], 3),
+                        "cube_x": round(cp[0], 4) if cp[0] is not None else "",
+                        "cube_y": round(cp[1], 4) if cp[1] is not None else "",
+                        "cube_z": round(cp[2], 4) if cp[2] is not None else "",
+                        "drop_x": round(dp[0], 4) if dp[0] is not None else "",
+                        "drop_y": round(dp[1], 4) if dp[1] is not None else "",
+                        "drop_z": round(dp[2], 4) if dp[2] is not None else "",
+                        "start_x": round(spos[0], 4) if spos[0] is not None else "",
+                        "start_y": round(spos[1], 4) if spos[1] is not None else "",
+                        "start_z": round(spos[2], 4) if spos[2] is not None else "",
+                        "dist_start_to_cube": (
+                            round(r["dist_start_to_cube"], 4)
+                            if r.get("dist_start_to_cube") is not None
+                            else ""
+                        ),
+                        "dist_start_to_drop": (
+                            round(r["dist_start_to_drop"], 4)
+                            if r.get("dist_start_to_drop") is not None
+                            else ""
+                        ),
+                        "phase_approach_s": round(sp.get("approach", 0.0), 3),
+                        "phase_grip_s": round(sp.get("grip", 0.0), 3),
+                        "phase_carry_s": round(sp.get("carry", 0.0), 3),
+                        "phase_place_s": round(sp.get("place", 0.0), 3),
+                    }
+                    if EXP_TYPE == "obstacle":
+                        row["n_obstacles"] = r.get("n_obstacles", "")
+                        row["total_hits"] = r.get("total_hits", 0)
+                        row["penalty_accumulated_s"] = round(
+                            r.get("penalty_accumulated", 0.0), 3
+                        )
+                        row["adjusted_duration_s"] = round(
+                            r.get("adjusted_duration", r["duration"]), 3
+                        )
+                    writer.writerow(row)
+
+        else:  # reach
             fieldnames = [
                 "trial",
                 "label",
@@ -546,7 +686,7 @@ finally:
                 "target_z",
             ]
             trial_defs = {i + 1: t for i, t in enumerate(experiment._trial_defs)}
-            with open(filename, "w", newline="") as f:
+            with open(results_filename, "w", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 for r in results:
@@ -563,7 +703,34 @@ finally:
                         }
                     )
 
-        print(f"Results saved to {filename}")
+        print(f"Trial results saved → {results_filename}")
         print(experiment.summary())
     else:
-        print("No results to save.")
+        print("No trial results to save.")
+
+    # ── Save kinematics CSV ───────────────────────────────────────────────────
+    if kinematics_buffer:
+        kin_filename = f"{results_dir}/{exp_tag}_kinematics_{ts}.csv"
+
+        kin_fieldnames = [
+            "sim_time",
+            "trial",
+            "phase",
+            "gripper_open",
+            "wrist_x",
+            "wrist_y",
+            "wrist_z",
+            *[f"j{i+1}_rad" for i in range(N_JOINTS)],
+            *[f"j{i+1}_deg" for i in range(N_JOINTS)],
+            "obstacle_hits",
+        ]
+        with open(kin_filename, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=kin_fieldnames)
+            writer.writeheader()
+            writer.writerows(kinematics_buffer)
+
+        print(
+            f"Kinematics saved      → {kin_filename}  ({len(kinematics_buffer)} frames)"
+        )
+    else:
+        print("No kinematics to save.")
