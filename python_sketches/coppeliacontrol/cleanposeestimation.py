@@ -13,10 +13,25 @@ T  start / restart Transport experiment
 Q  quit
 """
 
+import sys
+import traceback
+
+
+def _crash(type, value, tb):
+    with open("crash.txt", "w", encoding="utf-8") as f:
+        traceback.print_exception(type, value, tb, file=f)
+    traceback.print_exception(type, value, tb)
+    input("Press enter to close...")
+
+
+sys.excepthook = _crash
+
 import cv2
 import mediapipe as mp
 import numpy as np
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
+
+from math import pi
 
 from utils import (
     # config
@@ -33,6 +48,7 @@ from utils import (
     POSE_SMOOTH_ALPHA,
     MODE_REACH,
     MODE_TRANSPORT,
+    MODE_OBSTACLE,
     MODE_SELECT,
     # math / pose
     vec3,
@@ -53,9 +69,10 @@ from utils import (
     # experiments
     make_reach_experiment,
     make_transport_experiment,
+    make_obstacle_experiment,
     save_results,
+    save_kinematics,
 )
-
 
 # ── CoppeliaSim setup ─────────────────────────────────────────────────────────
 print("Connecting to CoppeliaSim...")
@@ -81,6 +98,35 @@ sim.setObjectAlias(target, "WristTarget")
 
 robot_shoulder_world = sim.getObjectPosition(rightShoulderAbduct, -1)
 print(f"Robot shoulder origin: {robot_shoulder_world}")
+
+# ── joint handles for kinematics logging ──────────────────────────────────────
+joint_handles = [
+    sim.getObject("/rightJoint1"),
+    sim.getObject("/rightJoint1/rightLink1/rightJoint2"),
+    sim.getObject("/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3"),
+    sim.getObject(
+        "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4"
+    ),
+    sim.getObject(
+        "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5"
+    ),
+    sim.getObject(
+        "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5/rightLink5/rightJoint6"
+    ),
+    sim.getObject(
+        "/rightJoint1/rightLink1/rightJoint2/rightLink2/rightJoint3/rightLink3/rightJoint4/rightLink4/rightJoint5/rightLink5/rightJoint6/rightLink6/rightJoint7"
+    ),
+]
+N_JOINTS = len(joint_handles)
+print(f"Tracking {N_JOINTS} joints for kinematics logging.")
+
+# ── arm collision collection (used by obstacle experiment) ────────────────────
+arm_collection = sim.createCollection(0)
+sim.addItemToCollection(arm_collection, sim.handle_tree, rightShoulderAbduct, 0)
+print(f"Arm collision collection created (handle={arm_collection}).")
+
+# ── kinematics buffer (one row per sim.step) ──────────────────────────────────
+kinematics_buffer = []
 
 # IK groups
 ikEnv = simIK.createEnvironment()
@@ -200,6 +246,35 @@ try:
 
         sim.step()
         wrist_pos = sim.getObjectPosition(rightGripperObject, -1)
+
+        # ── kinematics sample ─────────────────────────────────────────────────
+        joint_angles_rad = [sim.getJointPosition(h) for h in joint_handles]
+        trial_idx = getattr(experiment, "_index", 0) if experiment else 0
+        active = getattr(experiment, "_active", None) if experiment else None
+        phase = getattr(active, "_phase", "") if active is not None else ""
+        hits = getattr(active, "_total_hits", 0) if active is not None else 0
+        ik_ok = "ok" if (target_pos or target_quat) else "no_pose"
+        kinematics_buffer.append(
+            {
+                "sim_time": round(sim.getSimulationTime(), 4),
+                "trial": trial_idx,
+                "phase": phase,
+                "gripper_open": int(gripper_open),
+                "ik_status": ik_ok,
+                "wrist_x": round(wrist_pos[0], 5),
+                "wrist_y": round(wrist_pos[1], 5),
+                "wrist_z": round(wrist_pos[2], 5),
+                **{
+                    f"j{i+1}_rad": round(joint_angles_rad[i], 6)
+                    for i in range(N_JOINTS)
+                },
+                **{
+                    f"j{i+1}_deg": round(joint_angles_rad[i] * 180.0 / pi, 4)
+                    for i in range(N_JOINTS)
+                },
+                "obstacle_hits": hits,
+            }
+        )
 
         # ── experiment update ─────────────────────────────────────────────────
         if experiment is not None and current_mode != MODE_SELECT:
@@ -378,6 +453,15 @@ try:
             )
             current_mode = MODE_TRANSPORT
             summary_printed = False
+        elif key == ord("o"):
+            if experiment is not None and experiment.results:
+                save_results(experiment, current_mode)
+            print("Starting Obstacle Transport experiment...")
+            experiment = make_obstacle_experiment(
+                sim, robot_shoulder_world, arm_collection, start_pos=wrist_pos
+            )
+            current_mode = MODE_OBSTACLE
+            summary_printed = False
 
 except KeyboardInterrupt:
     print("Interrupted.")
@@ -402,5 +486,6 @@ finally:
     if "experiment" in dir() and experiment is not None and experiment.results:
         if not summary_printed:
             save_results(experiment, current_mode)
+        save_kinematics(kinematics_buffer, current_mode, N_JOINTS)
     else:
         print("No results to save.")

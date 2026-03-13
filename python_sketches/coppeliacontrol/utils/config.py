@@ -57,7 +57,7 @@ EXP_SEED = None
 TRANSPORT_N_TRIALS = 10
 TRANSPORT_PICK_RADIUS = 0.06
 TRANSPORT_DROP_RADIUS = 0.06
-TRANSPORT_TIMEOUT = 100.0
+TRANSPORT_TIMEOUT = 30.0
 TRANSPORT_MIN_REACH = 0.85
 TRANSPORT_MAX_REACH = 0.9
 TRANSPORT_MIN_ELEV = -35.0
@@ -66,7 +66,38 @@ TRANSPORT_AZ_MIN = 50.0
 TRANSPORT_AZ_MAX = 90.0
 TRANSPORT_SEED = None
 
+# ── obstacle transport experiment configuration ───────────────────────────────
+OBS_N_TRIALS = 10
+OBS_PICK_RADIUS = 0.06
+OBS_DROP_RADIUS = 0.06
+OBS_TIMEOUT = 100.0
+OBS_MIN_REACH = 0.85
+OBS_MAX_REACH = 0.9
+OBS_MIN_ELEV = -35.0
+OBS_MAX_ELEV = 50.0
+OBS_AZ_MIN = 50.0
+OBS_AZ_MAX = 90.0
+OBS_SEED = None
+
+# ObstacleConfig fields – edit these to change the obstacle cloud:
+OBS_N_OBSTACLES = 10  # number of spherical obstacles
+OBS_RADIUS_MIN = 0.01  # smallest sphere radius (m)
+OBS_RADIUS_MAX = 0.03  # largest sphere radius (m)
+OBS_MARGIN = 0.12  # keep-clear radius around cube & drop zone (m)
+OBS_SHOULDER_MARGIN = 0.3  # keep-clear radius around shoulder origin (m)
+OBS_PENALTY_ON_HIT = False  # add time penalty to reported duration on each hit
+OBS_PENALTY_SECONDS = 2.0  # seconds added per obstacle contact event
+# Obstacle cloud hemisphere bounds – same meaning as the OBS_* reach params above
+OBS_CLOUD_MIN_REACH = 0.3  # nearest obstacle (fraction of arm length)
+OBS_CLOUD_MAX_REACH = 0.90  # furthest obstacle (fraction of arm length)
+OBS_CLOUD_MIN_ELEVATION = -20.0  # degrees below horizontal
+OBS_CLOUD_MAX_ELEVATION = 70.0  # degrees above horizontal
+OBS_CLOUD_AZ_MIN = 20.0  # azimuth spread around OBS_CLOUD_AZ_CENTRE
+OBS_CLOUD_AZ_MAX = 90.0
+OBS_CLOUD_AZ_CENTRE = -90.0  # should match TRN_AZ_* centre for consistency
+
 # ── experiment mode tokens ────────────────────────────────────────────────────
 MODE_REACH = "reach"
 MODE_TRANSPORT = "transport"
+MODE_OBSTACLE = "obstacle"
 MODE_SELECT = "select"  # lobby / menu screen

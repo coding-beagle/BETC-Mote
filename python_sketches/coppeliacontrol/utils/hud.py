@@ -9,7 +9,7 @@ All OpenCV overlay / HUD drawing functions.
 
 import cv2
 
-from .config import MODE_REACH, MODE_TRANSPORT
+from .config import MODE_REACH, MODE_TRANSPORT, MODE_OBSTACLE
 
 
 # ── colour helper ─────────────────────────────────────────────────────────────
@@ -36,6 +36,7 @@ def draw_mode_select_hud(frame):
         ("", 0.0, (0, 0, 0), 0),
         ("[R]  Reach Experiment", 0.7, _cv_col(100, 220, 130), 2),
         ("[T]  Transport Experiment", 0.7, _cv_col(100, 180, 255), 2),
+        ("[O]  Obstacle Transport", 0.7, _cv_col(220, 100, 80), 2),
         ("", 0.0, (0, 0, 0), 0),
         ("Transport: open hand = gripper open", 0.45, (140, 140, 140), 1),
         ("          closed fist = gripper closed", 0.45, (140, 140, 140), 1),
@@ -71,6 +72,9 @@ def draw_experiment_hud(frame, experiment, wrist_pos, dt, mode):
     if mode == MODE_REACH:
         badge_txt = "REACH"
         badge_col = _cv_col(100, 220, 130)
+    elif mode == MODE_OBSTACLE:
+        badge_txt = "OBSTACLE"
+        badge_col = _cv_col(220, 100, 80)
     else:
         badge_txt = "TRANSPORT"
         badge_col = _cv_col(100, 180, 255)

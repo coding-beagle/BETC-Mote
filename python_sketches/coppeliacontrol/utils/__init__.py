@@ -25,4 +25,6 @@ from .experiment_io import (
     make_reach_experiment,
     make_transport_experiment,
     save_results,
+    make_obstacle_experiment,
+    save_kinematics,
 )
